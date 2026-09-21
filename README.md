@@ -1,49 +1,52 @@
 # python-utils-45
 
-A collection of utility functions for cryptocurrency data analysis and trading automation in Python. This project aims to simplify common tasks for developers working with various crypto APIs and facilitate quick prototyping of trading strategies.
+`python-utils-45` is a high-performance Python toolkit designed to streamline common tasks in cryptocurrency trading and blockchain data analysis. It provides robust wrappers for exchange APIs and specialized math utilities for calculating portfolio metrics and market volatility.
 
 ## Features
 
-- **API Integration**: Seamlessly interact with major cryptocurrency exchanges like Binance and Coinbase, with built-in methods to fetch market data, order book information, and account balances.
-- **Data Visualization**: Generate insightful visualizations of price trends, trading volumes, and historical performance using matplotlib and seaborn.
-- **Time-Series Analysis**: Built-in support for common time-series analysis functions, including moving averages, RSI, and MACD, to assist in strategy development.
-- **Trade Simulation**: Simulate trades and backtest strategies using historical data to evaluate performance before going live.
+*   **Exchange Abstraction Layer:** Standardized interface to interact with major CEXs (Binance, Kraken, Coinbase) using unified request logic and rate-limit handling.
+*   **Real-time Orderbook Analytics:** Optimized functions for calculating Mid-price, Spread, and Orderbook Imbalance with low-latency execution.
+*   **Backtesting Utilities:** Lightweight simulation engine to compute Sharpe ratios, Maximum Drawdown, and ROI on historical OHLCV data.
+*   **Security Signing Helpers:** Built-in HMAC-SHA256 signature generation to securely authenticate private API requests without boilerplate overhead.
 
 ## Installation
 
-To get started with `python-utils-45`, clone the repository and install the required dependencies:
+Install the package via pip:
 
 ```bash
-git clone https://github.com/your_username/python-utils-45.git
+pip install python-utils-45
+```
+
+For development mode and access to experimental indicators:
+
+```bash
+git clone https://github.com/Developer/python-utils-45.git
 cd python-utils-45
 pip install -r requirements.txt
 ```
 
-## Basic Usage
+## Usage Example
 
-Here’s a quick example of how to use the library to fetch current price data and plot it:
+Easily fetch ticker data and compute volatility using the library's streamlined core:
 
 ```python
-from utils.crypto_api import CryptoAPI
-from utils.visualization import plot_price_trend
+from crypto_utils import ExchangeClient, Analytics
 
-# Initialize the API client
-api = CryptoAPI(exchange='binance', api_key='YOUR_API_KEY')
+# Initialize exchange client
+client = ExchangeClient(api_key='YOUR_KEY', secret='YOUR_SECRET')
 
-# Fetch current price for Bitcoin
-btc_price = api.get_current_price('BTC/USDT')
-print(f"Current BTC Price: {btc_price}")
+# Fetch live ticker for BTC/USDT
+ticker = client.get_ticker('BTC/USDT')
 
-# Fetch historical data for plotting
-historical_data = api.get_historical_data('BTC/USDT', period='7d')
+# Calculate 24h rolling volatility
+vol = Analytics.calculate_volatility(ticker.history(days=1))
 
-# Plot price trend
-plot_price_trend(historical_data)
+print(f"BTC Current Price: {ticker.price}")
+print(f"Rolling Volatility: {vol:.4f}")
 ```
-
-For more detailed documentation and examples, please visit the [Wiki](https://github.com/your_username/python-utils-45/wiki).
 
 ## License
 
-![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)  
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
