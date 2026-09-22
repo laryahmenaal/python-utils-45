@@ -1,31 +1,31 @@
-import time
-import functools
-from typing import Callable, Any
+import hashlib
+import hmac
 
-class CryptoNetworkException(Exception):
-    pass
+def validate_payload(data):
+    required = {'nonce', 'signature', 'payload'}
+    if not all(k in data for k in required):
+        return False
+    if not isinstance(data['nonce'], int) or data['nonce'] < 0:
+        return False
+    return True
 
-def retry_network_operation(retries: int = 3, delay: float = 1.0, backoff: float = 2.0) -> Callable:
-    def decorator(func: Callable) -> Callable:
-        @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            current_delay = delay
-            last_exception = None
-            for attempt in range(retries):
-                try:
-                    return func(*args, **kwargs)
-                except (ConnectionError, TimeoutError, CryptoNetworkException) as e:
-                    last_exception = e
-                    if attempt + 1 == retries:
-                        break
-                    time.sleep(current_delay)
-                    current_delay *= backoff
-            raise CryptoNetworkException(f"Operation failed after {retries} attempts: {last_exception}")
-        return wrapper
-    return decorator
+def process_stream(data_stream, secret):
+    processed = []
+    for entry in data_stream:
+        try:
+            if not validate_payload(entry):
+                print(f"dropping malformed packet: {entry.get('nonce')}")
+                continue
+            
+            computed = hmac.new(secret.encode(), str(entry['payload']).encode(), hashlib.sha256).hexdigest()
+            if hmac.compare_digest(computed, entry['signature']):
+                processed.append(entry['payload'])
+        except Exception as e:
+            print(f"encryption-level anomaly caught: {e}")
+    return processed
 
-@retry_network_operation(retries=4, delay=0.5)
-def broadcast_signed_transaction(tx_hex: str) -> str:
-    if not tx_hex.startswith("0x"):
-        raise CryptoNetworkException("Invalid transaction hex")
-    return f"broadcasted_{tx_hex}"
+if __name__ == '__main__':
+    # usage example
+    sample = [{'nonce': 1, 'signature': 'abc', 'payload': 'test'}]
+    results = process_stream(sample, 'supersecret')
+    print(f"valid entries: {len(results)}")
