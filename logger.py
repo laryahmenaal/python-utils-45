@@ -1,34 +1,33 @@
 import logging
 from logging.handlers import RotatingFileHandler
+import os
 
-class Logger:
-    def __init__(self, name='app_logger', log_file='app.log', max_bytes=5 * 1024 * 1024, backup_count=3):
-        self.logger = logging.getLogger(name)
-        self.logger.setLevel(logging.DEBUG)
-        handler = RotatingFileHandler(log_file, maxBytes=max_bytes, backupCount=backup_count)
-        handler.setFormatter(self._get_formatter())
-        self.logger.addHandler(handler)
+def get_crypto_logger(name: str = 'crypto_bot', log_file: str = 'trade_audit.log'):
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
 
-    def _get_formatter(self):
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        return formatter
+    if not logger.handlers:
+        # Creative custom formatter for high-frequency trading context
+        formatter = logging.Formatter(
+            '%(asctime)s.%(msecs)03d | %(levelname)-7s | %(message)s',
+            datefmt='%H:%M:%S'
+        )
 
-    def debug(self, message):
-        self.logger.debug(message)
+        # Rotate 5MB logs, keep 3 historical records
+        handler = RotatingFileHandler(
+            log_file, 
+            maxBytes=5 * 1024 * 1024, 
+            backupCount=3
+        )
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
 
-    def info(self, message):
-        self.logger.info(message)
+        # Optional console feedback for local dev
+        stream_handler = logging.StreamHandler()
+        stream_handler.setFormatter(formatter)
+        logger.addHandler(stream_handler)
 
-    def warning(self, message):
-        self.logger.warning(message)
+    return logger
 
-    def error(self, message):
-        self.logger.error(message)
-
-    def critical(self, message):
-        self.logger.critical(message)
-
-if __name__ == '__main__':
-    my_logger = Logger()
-    my_logger.info('This is an info message.')
-    my_logger.error('This is an error message.')
+# Singleton pattern instance for module-level import
+crypto_logger = get_crypto_logger()
