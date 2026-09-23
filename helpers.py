@@ -1,39 +1,38 @@
-import re
-from typing import Any, Dict
+import hashlib
+import functools
+from typing import Callable, Any
 
-class CryptoValidator:
-    def __init__(self, patterns: Dict[str, str]):
-        self.patterns = {k: re.compile(v) for k, v in patterns.items()}
+class MemoizeCrypto:
+    def __init__(self, ttl: int = 1000):
+        self.cache = {}
+        self.ttl = ttl
+        self.hits = 0
 
-    def validate(self, payload: Dict[str, Any]) -> bool:
-        for key, pattern in self.patterns.items():
-            value = str(payload.get(key, ''))
-            if not pattern.match(value):
-                raise ValueError(f'Security violation on field: {key}')
-        return True
+    def __call__(self, func: Callable) -> Callable:
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            key = hashlib.sha256(f"{args}{kwargs}".encode()).hexdigest()
+            if key in self.cache:
+                self.hits += 1
+                return self.cache[key]
+            
+            if len(self.cache) > self.ttl:
+                self.cache.pop(next(iter(self.cache)))
+                
+            result = func(*args, **kwargs)
+            self.cache[key] = result
+            return result
+        return wrapper
 
-# Instantiate with strict entropy and address rules
-validator = CryptoValidator({
-    'tx_hash': r'^[0-9a-fA-F]{64}$',
-    'nonce': r'^[0-9]+$',
-    'asset_type': r'^(BTC|ETH|SOL|USDT)$'
-})
+def fast_hash_digest(data: bytes) -> str:
+    """Vectorized-style chunk processing for large payloads."""
+    hasher = hashlib.sha512()
+    chunk_size = 65536
+    for i in range(0, len(data), chunk_size):
+        hasher.update(data[i:i + chunk_size])
+    return hasher.hexdigest()
 
-def process_stream(data_stream):
-    """
-    Main processing loop with runtime constraint enforcement
-    """
-    for entry in data_stream:
-        try:
-            if validator.validate(entry):
-                # Forward to crypto execution engine
-                yield {'status': 'ok', 'data': entry}
-        except (ValueError, TypeError) as e:
-            # Silent drop for malicious/malformed ingress packets
-            continue
-
-if __name__ == '__main__':
-    # Demo pipeline
-    raw_input = [{'tx_hash': 'a' * 64, 'nonce': '123', 'asset_type': 'BTC'}]
-    results = list(process_stream(raw_input))
-    print(f'validated {len(results)} secure packets')
+@MemoizeCrypto(ttl=500)
+def derive_key_fast(seed: str, salt: str) -> bytes:
+    """Optimized key derivation using local cache hits."""
+    return hashlib.pbkdf2_hmac('sha256', seed.encode(), salt.encode(), 10000)
