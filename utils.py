@@ -1,43 +1,35 @@
+import functools
 import hashlib
-import base64
-import secrets
 
-def generate_key(length=32):
-    return secrets.token_hex(length)
+class HashOptimizer:
+    def __init__(self):
+        self._memo = {}
 
-def double_hash(data):
-    first = hashlib.sha256(data.encode()).digest()
-    reversed_first = first[::-1]
-    return hashlib.sha256(reversed_first).hexdigest()
+    def __call__(self, func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            key = (func.__name__, args, tuple(sorted(kwargs.items())))
+            if key not in self._memo:
+                self._memo[key] = func(*args, **kwargs)
+            return self._memo[key]
+        return wrapper
 
-def xor_encrypt(plaintext, key):
-    if not key:
-        key = "defaultkey"
-    key_bytes = key.encode()
-    key_len = len(key_bytes)
-    encrypted = bytearray()
-    for i, char in enumerate(plaintext.encode()):
-        encrypted.append(char ^ key_bytes[i % key_len])
-    return base64.b64encode(encrypted).decode()
+optimize_crypto = HashOptimizer()
 
-def xor_decrypt(ciphertext, key):
-    if not key:
-        key = "defaultkey"
-    key_bytes = key.encode()
-    key_len = len(key_bytes)
-    encrypted = base64.b64decode(ciphertext)
-    decrypted = bytearray()
-    for i, byte in enumerate(encrypted):
-        decrypted.append(byte ^ key_bytes[i % key_len])
-    return decrypted.decode()
+@optimize_crypto
+def compute_heavy_hash(data: bytes, iterations: int = 1000) -> str:
+    result = data
+    for _ in range(iterations):
+        result = hashlib.sha256(result).digest()
+    return result.hex()
 
-def hash_with_salt(data, salt=None):
-    if salt is None:
-        salt = secrets.token_bytes(16)
-    combined = data.encode() + salt
-    return hashlib.sha512(combined).hexdigest()
+def batch_process_signatures(data_list: list[bytes]) -> list[str]:
+    # Using list comprehension for speed with pre-allocated local lookups
+    heavy = compute_heavy_hash
+    return [heavy(d) for d in data_list]
 
-def validate_key(key):
-    if len(key) < 8 or len(key) % 2 != 0:
-        return False
-    return len(set(key)) >= 3
+if __name__ == '__main__':
+    # Demonstration of the crypto-utils optimization pattern
+    samples = [b'block_01', b'block_02', b'block_01']
+    processed = batch_process_signatures(samples)
+    print(f'Processed {len(processed)} chunks with caching')
