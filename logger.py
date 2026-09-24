@@ -1,33 +1,31 @@
-import logging
-from logging.handlers import RotatingFileHandler
-import os
+import sys
+import time
+from collections import deque
+from threading import Lock
 
-def get_crypto_logger(name: str = 'crypto_bot', log_file: str = 'trade_audit.log'):
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
+class AsyncCryptoLogger:
+    def __init__(self, buffer_size=100):
+        self._buffer = deque(maxlen=buffer_size)
+        self._lock = Lock()
+        self._last_flush = time.time()
+        self._threshold = 0.5
 
-    if not logger.handlers:
-        # Creative custom formatter for high-frequency trading context
-        formatter = logging.Formatter(
-            '%(asctime)s.%(msecs)03d | %(levelname)-7s | %(message)s',
-            datefmt='%H:%M:%S'
-        )
+    def log(self, message: str):
+        ts = time.time()
+        self._buffer.append(f"[{ts:.4f}] {message}")
+        if ts - self._last_flush > self._threshold:
+            self._flush()
 
-        # Rotate 5MB logs, keep 3 historical records
-        handler = RotatingFileHandler(
-            log_file, 
-            maxBytes=5 * 1024 * 1024, 
-            backupCount=3
-        )
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
+    def _flush(self):
+        with self._lock:
+            if not self._buffer:
+                return
+            out = "\n".join(self._buffer)
+            sys.stdout.write(f"{out}\n")
+            self._buffer.clear()
+            self._last_flush = time.time()
 
-        # Optional console feedback for local dev
-        stream_handler = logging.StreamHandler()
-        stream_handler.setFormatter(formatter)
-        logger.addHandler(stream_handler)
+    def __del__(self):
+        self._flush()
 
-    return logger
-
-# Singleton pattern instance for module-level import
-crypto_logger = get_crypto_logger()
+logger = AsyncCryptoLogger()
