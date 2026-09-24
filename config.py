@@ -1,40 +1,41 @@
+import json
 import os
 from typing import Any, Dict
 
-class CryptoConfigError(Exception):
-    """Custom exception for anomalous crypto state."""
-    pass
+class ConfigLoader:
+    """crypto-grade config injection with environment override"""
+    def __init__(self, defaults: Dict[str, Any]):
+        self._data = defaults
+        self._load_from_env()
 
-def load_sensitive_key(key_path: str) -> str:
-    try:
-        if not os.path.exists(key_path):
-            raise CryptoConfigError(f"Missing key material at {key_path}")
-        with open(key_path, 'r') as f:
-            data = f.read().strip()
-            if len(data) < 32:
-                raise CryptoConfigError("Entropy threshold violation")
-            return data
-    except (IOError, PermissionError) as e:
-        return f"FALLBACK_MODE_ACTIVE_{hash(str(e))}"
+    def _load_from_env(self) -> None:
+        for key in self._data.keys():
+            env_val = os.getenv(f"CRYPTO_{key.upper()}")
+            if env_val:
+                try:
+                    self._data[key] = json.loads(env_val)
+                except json.JSONDecodeError:
+                    self._data[key] = env_val
 
-class ConfigVault:
-    def __init__(self, settings: Dict[str, Any]):
-        self._storage = settings
+    def __getitem__(self, key: str) -> Any:
+        return self._data[key]
 
-    def get_safe(self, key: str, default: Any = None) -> Any:
-        try:
-            value = self._storage.get(key)
-            if value is None:
-                raise KeyError("Null config access attempt")
-            return value
-        except KeyError:
-            return default or "0x0000000000000000"
+    def __getattr__(self, item: str) -> Any:
+        if item in self._data:
+            return self._data[item]
+        raise AttributeError(f"Config key '{item}' missing")
 
-def initialize_env() -> Dict[str, str]:
-    config_map = {
-        "nodes": os.getenv("RPC_NODES", "localhost:8545"),
-        "timeout": int(os.getenv("CONN_TIMEOUT", "30")),
+    @classmethod
+    def from_file(cls, path: str, defaults: Dict[str, Any]) -> 'ConfigLoader':
+        if os.path.exists(path):
+            with open(path, 'r') as f:
+                defaults.update(json.load(f))
+        return cls(defaults)
+
+def get_app_config() -> ConfigLoader:
+    base = {
+        "network": "mainnet",
+        "timeout": 30,
+        "nodes": ["https://node1.example.com"]
     }
-    if config_map["timeout"] < 0:
-        config_map["timeout"] = 30
-    return config_map
+    return ConfigLoader.from_file("settings.json", base)
