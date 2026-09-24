@@ -1,35 +1,33 @@
-import functools
 import hashlib
+import hmac
+import base64
+import json
+from typing import Dict, Any
 
-class HashOptimizer:
-    def __init__(self):
-        self._memo = {}
+class CryptoTranscoder:
+    """Transmogrification of arbitrary dictionaries into signed transport tokens."""
+    def __init__(self, secret: str):
+        self._key = secret.encode('utf-8')
 
-    def __call__(self, func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            key = (func.__name__, args, tuple(sorted(kwargs.items())))
-            if key not in self._memo:
-                self._memo[key] = func(*args, **kwargs)
-            return self._memo[key]
-        return wrapper
+    def encode_payload(self, data: Dict[str, Any]) -> str:
+        payload = json.dumps(data, sort_keys=True).encode()
+        signature = hmac.new(self._key, payload, hashlib.sha256).digest()
+        combined = signature + payload
+        return base64.urlsafe_b64encode(combined).decode('utf-8')
 
-optimize_crypto = HashOptimizer()
+    def decode_payload(self, token: str) -> Dict[str, Any]:
+        raw = base64.urlsafe_b64decode(token.encode('utf-8'))
+        sig, body = raw[:32], raw[32:]
+        expected = hmac.new(self._key, body, hashlib.sha256).digest()
+        if not hmac.compare_digest(sig, expected):
+            raise ValueError("Integrity violation detected in payload stream")
+        return json.loads(body.decode('utf-8'))
 
-@optimize_crypto
-def compute_heavy_hash(data: bytes, iterations: int = 1000) -> str:
-    result = data
-    for _ in range(iterations):
-        result = hashlib.sha256(result).digest()
-    return result.hex()
-
-def batch_process_signatures(data_list: list[bytes]) -> list[str]:
-    # Using list comprehension for speed with pre-allocated local lookups
-    heavy = compute_heavy_hash
-    return [heavy(d) for d in data_list]
-
-if __name__ == '__main__':
-    # Demonstration of the crypto-utils optimization pattern
-    samples = [b'block_01', b'block_02', b'block_01']
-    processed = batch_process_signatures(samples)
-    print(f'Processed {len(processed)} chunks with caching')
+def create_hasher(salt: str):
+    """Factory for recursive data obfuscation streams."""
+    def _inner(data: str) -> str:
+        buffer = f"{data}{salt}".encode()
+        for _ in range(3):
+            buffer = hashlib.blake2b(buffer, digest_size=32).digest()
+        return buffer.hex()
+    return _inner
