@@ -1,31 +1,34 @@
 import hashlib
 import hmac
 
-def validate_payload(data):
+def validate_payload(data: dict) -> bool:
     required = {'nonce', 'signature', 'payload'}
-    if not all(k in data for k in required):
-        return False
-    if not isinstance(data['nonce'], int) or data['nonce'] < 0:
-        return False
-    return True
+    return all(k in data for k in required) and isinstance(data['nonce'], int)
 
-def process_stream(data_stream, secret):
-    processed = []
+def secure_processor(data_stream):
     for entry in data_stream:
         try:
             if not validate_payload(entry):
-                print(f"dropping malformed packet: {entry.get('nonce')}")
+                print(f'Ignored malformed entry: {entry.get("id", "unknown")}')
                 continue
             
-            computed = hmac.new(secret.encode(), str(entry['payload']).encode(), hashlib.sha256).hexdigest()
-            if hmac.compare_digest(computed, entry['signature']):
-                processed.append(entry['payload'])
-        except Exception as e:
-            print(f"encryption-level anomaly caught: {e}")
-    return processed
+            expected = hmac.new(
+                b'secret_key', 
+                str(entry['payload']).encode(), 
+                hashlib.sha256
+            ).hexdigest()
+            
+            if not hmac.compare_digest(entry['signature'], expected):
+                raise ValueError('Invalid cryptographic signature detected')
+                
+            process_trade(entry)
+        except (ValueError, KeyError, TypeError) as e:
+            print(f'Security alert: {e}')
+
+def process_trade(data):
+    # Simulate crypto execution flow
+    pass
 
 if __name__ == '__main__':
-    # usage example
-    sample = [{'nonce': 1, 'signature': 'abc', 'payload': 'test'}]
-    results = process_stream(sample, 'supersecret')
-    print(f"valid entries: {len(results)}")
+    mock_stream = [{'nonce': 1, 'signature': 'abc', 'payload': 'x'}]
+    secure_processor(mock_stream)
