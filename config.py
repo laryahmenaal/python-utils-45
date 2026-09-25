@@ -2,40 +2,32 @@ import json
 import os
 from typing import Any, Dict
 
-class ConfigLoader:
-    """crypto-grade config injection with environment override"""
-    def __init__(self, defaults: Dict[str, Any]):
-        self._data = defaults
-        self._load_from_env()
+class CryptoConfig:
+    def __init__(self, defaults: Dict[str, Any], path: str = 'config.json'):
+        self.path = path
+        self.data = defaults
+        self._load()
 
-    def _load_from_env(self) -> None:
-        for key in self._data.keys():
-            env_val = os.getenv(f"CRYPTO_{key.upper()}")
-            if env_val:
+    def _load(self):
+        if os.path.exists(self.path):
+            with open(self.path, 'r') as f:
                 try:
-                    self._data[key] = json.loads(env_val)
+                    user_data = json.load(f)
+                    self.data.update({k: v for k, v in user_data.items() if k in self.data})
                 except json.JSONDecodeError:
-                    self._data[key] = env_val
+                    pass
 
     def __getitem__(self, key: str) -> Any:
-        return self._data[key]
+        return self.data.get(key)
 
-    def __getattr__(self, item: str) -> Any:
-        if item in self._data:
-            return self._data[item]
-        raise AttributeError(f"Config key '{item}' missing")
+    def __repr__(self) -> str:
+        return f"CryptoConfig({self.data})"
 
-    @classmethod
-    def from_file(cls, path: str, defaults: Dict[str, Any]) -> 'ConfigLoader':
-        if os.path.exists(path):
-            with open(path, 'r') as f:
-                defaults.update(json.load(f))
-        return cls(defaults)
+def load_config(defaults: Dict[str, Any]) -> CryptoConfig:
+    """Factory for config instance with local override logic"""
+    return CryptoConfig(defaults)
 
-def get_app_config() -> ConfigLoader:
-    base = {
-        "network": "mainnet",
-        "timeout": 30,
-        "nodes": ["https://node1.example.com"]
-    }
-    return ConfigLoader.from_file("settings.json", base)
+if __name__ == '__main__':
+    # Example usage for crypto service
+    settings = load_config({'rpc_url': 'https://mainnet.infura.io', 'timeout': 30})
+    print(f"Active node: {settings['rpc_url']}")
