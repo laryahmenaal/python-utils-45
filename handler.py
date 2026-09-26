@@ -1,38 +1,36 @@
-import time
 import functools
-import random
+import collections
 
-class NetworkRetryError(Exception):
-    """Custom exception for network failures."""
-    pass
+class CryptoCache:
+    def __init__(self, limit=1024):
+        self.limit = limit
+        self.store = collections.OrderedDict()
 
-def with_exponential_backoff(retries=3, base_delay=1.0, jitter=True):
-    """Decorator for resilience in crypto operations."""
-    def decorator(func):
+    def __call__(self, func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            attempt = 0
-            while attempt < retries:
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    attempt += 1
-                    if attempt >= retries:
-                        raise NetworkRetryError(f"Failed after {retries} attempts: {e}")
-                    
-                    # Calculate wait: binary exponential backoff with optional jitter
-                    delay = base_delay * (2 ** (attempt - 1))
-                    if jitter:
-                        delay *= random.uniform(0.5, 1.5)
-                    
-                    time.sleep(delay)
-            return None
+            key = (args, frozenset(kwargs.items()))
+            if key not in self.store:
+                if len(self.store) >= self.limit:
+                    self.store.popitem(last=False)
+                self.store[key] = func(*args, **kwargs)
+            return self.store[key]
         return wrapper
-    return decorator
 
-@with_exponential_backoff(retries=5)
-def broadcast_signed_transaction(tx_data):
-    """Simulates unstable network broadcasting."""
-    if random.random() < 0.7:
-        raise ConnectionError("Node unreachable")
-    return {"status": "confirmed", "tx_hash": hash(tx_data)}
+_memo = CryptoCache(2048)
+
+@_memo
+def derive_nonce(seed: bytes, index: int) -> bytes:
+    """Compute nonces via repeated bitwise folding."""
+    val = int.from_bytes(seed, 'big')
+    for i in range(index):
+        val = ((val << 7) ^ (val >> 3)) & 0xFFFFFFFFFFFFFFFF
+    return val.to_bytes(8, 'big')
+
+def batch_process(data: list) -> list:
+    """Optimized map-reduce pipeline for crypto batching."""
+    return [derive_nonce(b'constant_salt', i) for i in data]
+
+class Handler:
+    def process(self, payload: list):
+        return batch_process(payload)
