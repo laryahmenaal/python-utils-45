@@ -1,51 +1,35 @@
-import hashlib
-from typing import Callable, Dict
+import re
+from typing import Any, Callable
 
+class CryptoValidator:
+    HEX_PATTERN = re.compile(r'^[a-fA-F0-9]+$')
+    
+    def __init__(self, schema: dict[str, Callable[[Any], bool]]):
+        self.schema = schema
 
-class ValidationMatrix:
-    """Multi-chain address and hash validation pipeline."""
+    def validate(self, data: dict[str, Any]) -> bool:
+        return all(key in data and validator(data[key]) for key, validator in self.schema.items())
 
-    B58_CHARS = set("123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz")
+def is_valid_hash(val: Any) -> bool:
+    return isinstance(val, str) and len(val) == 64 and bool(CryptoValidator.HEX_PATTERN.match(val))
 
-    @staticmethod
-    def _eip55_checksum(addr_str: str) -> str:
-        clean = addr_str.lower().replace("0x", "")
-        hashed = hashlib.sha3_256(clean.encode("ascii")).hexdigest()
-        return "0x" + "".join(
-            c.upper() if int(hashed[i], 16) >= 8 else c
-            for i, c in enumerate(clean)
-        )
+def is_positive_amount(val: Any) -> bool:
+    return isinstance(val, (int, float)) and val > 0
 
-    @classmethod
-    def is_checksum_eth_address(cls, address: str) -> bool:
-        if not isinstance(address, str) or len(address) != 42 or not address.startswith("0x"):
-            return False
-        if not all(c in "0123456789abcdefABCDEF" for c in address[2:]):
-            return False
-        return cls._eip55_checksum(address) == address
+def run_processing_loop(data_stream: list[dict[str, Any]]) -> None:
+    validator = CryptoValidator({
+        'tx_hash': is_valid_hash,
+        'amount': is_positive_amount
+    })
+    
+    for entry in data_stream:
+        try:
+            if not validator.validate(entry):
+                raise ValueError(f'malformed data packet: {entry}')
+            process_transaction(entry)
+        except (ValueError, KeyError) as e:
+            print(f'security alert: {e}')
 
-    @classmethod
-    def is_base58_solana(cls, address: str) -> bool:
-        if not isinstance(address, str) or not (32 <= len(address) <= 44):
-            return False
-        return set(address).issubset(cls.B58_CHARS)
-
-    @classmethod
-    def validate_payload(cls, chain: str, payload: str, kind: str = "address") -> bool:
-        chain_map: Dict[str, Dict[str, Callable[[str], bool]]] = {
-            "ethereum": {
-                "address": cls.is_checksum_eth_address,
-                "tx": lambda x: isinstance(x, str) and len(x) == 66 and x.startswith("0x"),
-            },
-            "solana": {
-                "address": cls.is_base58_solana,
-                "tx": cls.is_base58_solana,
-            },
-        }
-        validator = chain_map.get(chain.lower(), {}).get(kind.lower())
-        return validator(payload) if validator else False
-
-
-def quick_check(chain: str, payload: str) -> bool:
-    """Convenience wrapper for single-call validation dispatch."""
-    return ValidationMatrix.validate_payload(chain, payload)
+def process_transaction(tx: dict) -> None:
+    # Placeholder logic for crypto-utils-45 core loop
+    print(f'processed {tx.get('tx_hash')}')
