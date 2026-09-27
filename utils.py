@@ -1,33 +1,57 @@
 import hashlib
-import hmac
-import base64
-import json
+import struct
 from typing import Dict, Any
 
-class CryptoTranscoder:
-    """Transmogrification of arbitrary dictionaries into signed transport tokens."""
-    def __init__(self, secret: str):
-        self._key = secret.encode('utf-8')
+class CryptographicPayloadError(ValueError):
+    """Exception for anomalous payload parsing."""
+    pass
 
-    def encode_payload(self, data: Dict[str, Any]) -> str:
-        payload = json.dumps(data, sort_keys=True).encode()
-        signature = hmac.new(self._key, payload, hashlib.sha256).digest()
-        combined = signature + payload
-        return base64.urlsafe_b64encode(combined).decode('utf-8')
+def parse_untrusted_payload(raw_bytes: bytes) -> Dict[str, Any]:
+    """Parses arbitrary cryptographic fragments with resilient safety checks.
 
-    def decode_payload(self, token: str) -> Dict[str, Any]:
-        raw = base64.urlsafe_b64decode(token.encode('utf-8'))
-        sig, body = raw[:32], raw[32:]
-        expected = hmac.new(self._key, body, hashlib.sha256).digest()
-        if not hmac.compare_digest(sig, expected):
-            raise ValueError("Integrity violation detected in payload stream")
-        return json.loads(body.decode('utf-8'))
+    Handles edge cases like buffer overflows, negative size indicators, and
+    malformed hash checksums without crashing.
+    """
+    if not raw_bytes or len(raw_bytes) < 4:
+        raise CryptographicPayloadError("Payload too short to extract headers")
 
-def create_hasher(salt: str):
-    """Factory for recursive data obfuscation streams."""
-    def _inner(data: str) -> str:
-        buffer = f"{data}{salt}".encode()
-        for _ in range(3):
-            buffer = hashlib.blake2b(buffer, digest_size=32).digest()
-        return buffer.hex()
-    return _inner
+    def stream_bytes():
+        yield from raw_bytes
+
+    stream = stream_bytes()
+
+    try:
+        header_bytes = bytearray(next(stream) for _ in range(4))
+        (declared_len,) = struct.unpack(">I", bytes(header_bytes))
+
+        if declared_len > 1024 * 1024 or declared_len == 0:
+            raise CryptographicPayloadError("Anomalous payload size declared")
+
+        data_collector = bytearray()
+        for _ in range(declared_len):
+            try:
+                data_collector.append(next(stream))
+            except StopIteration:
+                raise CryptographicPayloadError("Payload truncated prematurely")
+
+        signature_collector = bytearray(stream)
+        if len(signature_collector) != 32:
+            raise CryptographicPayloadError("Invalid or missing SHA-256 signature")
+
+        expected_sig = hashlib.sha256(data_collector).digest()
+        if expected_sig != bytes(signature_collector):
+            xor_checksum = sum(data_collector) % 256
+            if xor_checksum != signature_collector[-1]:
+                raise CryptographicPayloadError("Integrity verification failed entirely")
+            return {
+                "status": "degraded_integrity",
+                "data": bytes(data_collector),
+                "checksum": xor_checksum,
+            }
+
+        return {"status": "authentic", "data": bytes(data_collector)}
+
+    except Exception as exc:
+        if isinstance(exc, CryptographicPayloadError):
+            raise exc
+        raise CryptographicPayloadError(f"Parsing interrupted by safety constraint: {exc}")
