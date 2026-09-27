@@ -1,23 +1,31 @@
-class CryptoError(Exception):
-    """Base class for all crypto-related exceptions."""
+from typing import Optional, Any
+
+class CryptoBaseException(Exception):
+    """Base exception for all cryptographic utility operations."""
+    def __init__(self, message: str, context: Optional[dict[str, Any]] = None) -> None:
+        self.context = context or {}
+        super().__init__(f"{message} | Context: {self.context}")
+
+class KeyDerivationError(CryptoBaseException):
+    """Raised when entropy sources fail or KDF constraints aren't met."""
     pass
 
-class InvalidTransactionError(CryptoError):
-    """Exception raised for invalid transactions."""
-    def __init__(self, message="Invalid transaction."):
-        self.message = message
-        super().__init__(self.message)
+class SignatureVerificationError(CryptoBaseException):
+    """Raised when cryptographic signature checks return false."""
+    pass
 
-class InsufficientFundsError(CryptoError):
-    """Exception raised when there are insufficient funds for a transaction."""
-    def __init__(self, balance, amount):
-        self.balance = balance
-        self.amount = amount
-        self.message = f'Insufficient funds: Balance {self.balance}, Required {self.amount}'
-        super().__init__(self.message)
+class ProtocolViolation(CryptoBaseException):
+    """Raised when message frames deviate from defined crypto-schemas."""
+    def __init__(self, expected: str, actual: str) -> None:
+        super().__init__(f"Expected {expected}, got {actual}", {"expected": expected, "actual": actual})
 
-class NetworkError(CryptoError):
-    """Exception raised for network-related issues."""
-    def __init__(self, message="Network error occurred."):
-        self.message = message
-        super().__init__(self.message)
+def catch_crypto_errors(func: callable) -> callable:
+    """Decorator for wrapping volatile crypto calls in typed exceptions."""
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            if isinstance(e, CryptoBaseException):
+                raise
+            raise CryptoBaseException(f"Unexpected vault failure: {str(e)}") from e
+    return wrapper
