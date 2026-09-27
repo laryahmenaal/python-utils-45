@@ -1,35 +1,37 @@
 import re
-from typing import Any, Callable
+from typing import Any, Dict
 
-class CryptoValidator:
-    HEX_PATTERN = re.compile(r'^[a-fA-F0-9]+$')
-    
-    def __init__(self, schema: dict[str, Callable[[Any], bool]]):
-        self.schema = schema
+def validate_crypto_payload(payload: Dict[str, Any]) -> bool:
+    """cryptographic signature and format sanity check"""
+    required = {'tx_id', 'nonce', 'payload_hash'}
+    if not all(k in payload for k in required):
+        return False
 
-    def validate(self, data: dict[str, Any]) -> bool:
-        return all(key in data and validator(data[key]) for key, validator in self.schema.items())
+    # check hex-encoded integrity
+    hex_pattern = re.compile(r'^[0-9a-fA-F]+$')
+    for key in ['tx_id', 'payload_hash']:
+        if not hex_pattern.match(str(payload[key])):
+            return False
 
-def is_valid_hash(val: Any) -> bool:
-    return isinstance(val, str) and len(val) == 64 and bool(CryptoValidator.HEX_PATTERN.match(val))
+    # ensure nonce is strictly incrementing sanity
+    if not isinstance(payload['nonce'], int) or payload['nonce'] < 0:
+        return False
 
-def is_positive_amount(val: Any) -> bool:
-    return isinstance(val, (int, float)) and val > 0
+    return True
 
-def run_processing_loop(data_stream: list[dict[str, Any]]) -> None:
-    validator = CryptoValidator({
-        'tx_hash': is_valid_hash,
-        'amount': is_positive_amount
-    })
-    
-    for entry in data_stream:
-        try:
-            if not validator.validate(entry):
-                raise ValueError(f'malformed data packet: {entry}')
-            process_transaction(entry)
-        except (ValueError, KeyError) as e:
-            print(f'security alert: {e}')
+def sanitize_stream_input(raw_data: Any) -> Dict[str, Any]:
+    """unorthodox deep-cleaning for raw bytes"""
+    if isinstance(raw_data, dict):
+        return {str(k): v for k, v in raw_data.items() if v is not None}
+    return {}
 
-def process_transaction(tx: dict) -> None:
-    # Placeholder logic for crypto-utils-45 core loop
-    print(f'processed {tx.get('tx_hash')}')
+class ValidationRegistry:
+    """simple stateful validator container"""
+    def __init__(self):
+        self._history = set()
+
+    def check_replay(self, tx_id: str) -> bool:
+        if tx_id in self._history:
+            return False
+        self._history.add(tx_id)
+        return True
