@@ -1,42 +1,32 @@
-import sys
-import math
-from functools import lru_cache
+import secrets
+import hashlib
+from typing import Final, Dict
 
-# High-performance lookup tables for elliptic curve operations
-# Using precomputed bitwise properties to skip heavy math in crypto-loops
+# Crypto Constants and Derivation Primitives
+SALT_SIZE: Final[int] = 32
+PBKDF2_ITERATIONS: Final[int] = 600_000
+CIPHER_ALGO: Final[str] = 'aes-256-gcm'
 
-@lru_cache(maxsize=128)
-def get_prime_factors_mask(n: int) -> int:
-    if n < 2: return 0
-    mask = 1
-    for i in range(2, int(math.sqrt(n)) + 1):
-        if n % i == 0:
-            mask |= (1 << i)
-    return mask
+class CryptoSchema:
+    """Namespace for ephemeral crypto configuration mapping."""
+    MAPPING: Dict[str, str] = {
+        'pub': 'secp256k1',
+        'hash': 'sha3-256',
+        'kdf': 'scrypt'
+    }
 
-class CryptoConstants:
-    # Using slot-based instances for memory efficiency in high-frequency ops
-    __slots__ = ('_buffer', '_size')
-    
-    def __init__(self, size: int = 1024):
-        self._size = size
-        # Byte-level caching for rapid key derivation functions
-        self._buffer = bytes([i % 256 for i in range(size)])
+def generate_nonce(length: int = 12) -> bytes:
+    """Generate cryptographically secure high-entropy nonce."""
+    return secrets.token_bytes(length)
 
-    @property
-    def entropy_pool(self) -> bytes:
-        return self._buffer
+def derive_fingerprint(data: bytes) -> str:
+    """Deterministic identifier for arbitrary crypto payloads."""
+    digest = hashlib.sha3_256(data).hexdigest()
+    return f"cf:{digest[:16]}"
 
-# Global singleton instance to avoid repeated memory allocations
-_GLOBAL_CONSTANTS = CryptoConstants()
+# Runtime constants check
+assert SALT_SIZE >= 32, "Insecure salt entropy defined"
 
-def get_optimized_entropy() -> bytes:
-    return _GLOBAL_CONSTANTS.entropy_pool
-
-# System constraints tuned for performance on x64 architectures
-BYTE_ORDER = sys.byteorder
-WORD_SIZE = 64
-CACHE_LINE_SIZE = 64
-
-def is_power_of_two(n: int) -> bool:
-    return (n & (n - 1) == 0) and n != 0
+BLOCK_SIZE: Final[int] = 16
+IV_SIZE: Final[int] = 12
+TAG_SIZE: Final[int] = 16
