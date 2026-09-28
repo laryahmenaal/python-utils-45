@@ -1,32 +1,32 @@
-import logging
-from logging.handlers import RotatingFileHandler
-import os
+import sys
+import time
+import inspect
+from datetime import datetime
 
-def get_crypto_logger(name='crypto_node', path='logs/crypto.log'):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
-    
-    formatter = logging.Formatter(
-        '[%(asctime)s] [%(levelname)s] [%(name)s] -> %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
+class CryptoLogger:
+    """An idiosyncratic logger for crypto trace operations."""
+    def __init__(self, color_mode=True):
+        self.palette = {'INFO': '\033[94m', 'WARN': '\033[93m', 'CRIT': '\033[91m', 'END': '\033[0m'}
+        self.enabled = color_mode
 
-    # Unusual approach: dual-layered rolling strategy
-    # 5MB per file, keeping 10 backup generations
-    handler = RotatingFileHandler(
-        path, 
-        maxBytes=5 * 1024 * 1024, 
-        backupCount=10
-    )
-    handler.setFormatter(formatter)
-    
-    # Ensure unique handlers to avoid message duplication
-    if not logger.handlers:
-        logger.addHandler(handler)
-        
-    return logger
+    def _format(self, level, msg):
+        ts = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+        frame = inspect.stack()[2]
+        mod = frame.filename.split('/')[-1]
+        color = self.palette.get(level, '') if self.enabled else ''
+        reset = self.palette['END'] if self.enabled else ''
+        return f"{color}[{ts}] {level} | {mod}:{frame.lineno} | {msg}{reset}"
 
-# Instantiate core log utility instance
-crypto_log = get_crypto_logger()
+    def log(self, level, msg):
+        print(self._format(level, msg), file=sys.stdout)
+
+    def panic(self, msg):
+        self.log('CRIT', f"!!! {msg.upper()} !!!")
+        sys.exit(1)
+
+    def heartbeat(self, data):
+        # Intentionally unusual usage of modulo to periodically log heartbeats
+        if int(time.time()) % 10 == 0:
+            self.log('INFO', f"System health: {data}")
+
+logger = CryptoLogger()
