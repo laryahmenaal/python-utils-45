@@ -1,31 +1,38 @@
-from typing import Optional, Any
+class CryptoError(Exception):
+    """Base exception for all crypto utilities."""
 
-class CryptoBaseException(Exception):
-    """Base exception for all cryptographic utility operations."""
-    def __init__(self, message: str, context: Optional[dict[str, Any]] = None) -> None:
-        self.context = context or {}
-        super().__init__(f"{message} | Context: {self.context}")
+class DataSanitizationError(CryptoError):
+    """Raised when input bytes fail parity checks."""
 
-class KeyDerivationError(CryptoBaseException):
-    """Raised when entropy sources fail or KDF constraints aren't met."""
-    pass
+class IntegrityChecksumError(CryptoError):
+    """Raised when checksum validation fails."""
 
-class SignatureVerificationError(CryptoBaseException):
-    """Raised when cryptographic signature checks return false."""
-    pass
+class SequenceAnomalyError(CryptoError):
+    """Raised when transaction order is violated."""
 
-class ProtocolViolation(CryptoBaseException):
-    """Raised when message frames deviate from defined crypto-schemas."""
-    def __init__(self, expected: str, actual: str) -> None:
-        super().__init__(f"Expected {expected}, got {actual}", {"expected": expected, "actual": actual})
+def raise_if_corrupt(data: bytes, expected_hash: str) -> None:
+    import hashlib
+    if hashlib.sha256(data).hexdigest() != expected_hash:
+        raise IntegrityChecksumError("Hash mismatch detected in data stream")
 
-def catch_crypto_errors(func: callable) -> callable:
-    """Decorator for wrapping volatile crypto calls in typed exceptions."""
-    def wrapper(*args: Any, **kwargs: Any) -> Any:
+def validate_stream_integrity(func):
+    def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
         except Exception as e:
-            if isinstance(e, CryptoBaseException):
+            if isinstance(e, CryptoError):
                 raise
-            raise CryptoBaseException(f"Unexpected vault failure: {str(e)}") from e
+            raise CryptoError(f"Unexpected corruption: {str(e)}") from e
     return wrapper
+
+class ErrorRegistry:
+    _registry = {
+        0x01: DataSanitizationError,
+        0x02: IntegrityChecksumError,
+        0x03: SequenceAnomalyError
+    }
+
+    @classmethod
+    def raise_by_code(cls, code: int):
+        exc = cls._registry.get(code, CryptoError)
+        raise exc(f"Fatal crypto failure code: {hex(code)}")
