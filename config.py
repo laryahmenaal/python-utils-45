@@ -1,33 +1,37 @@
-import json
 import os
+import json
 from typing import Any, Dict
 
-class CryptoConfig:
-    def __init__(self, defaults: Dict[str, Any], path: str = 'config.json'):
-        self.path = path
-        self.data = defaults
-        self._load()
+class ConfigLoader:
+    """Chain-loading configuration with recursive defaults and env injection."""
+    def __init__(self, defaults: Dict[str, Any] = None):
+        self._data = defaults or {}
 
-    def _load(self):
-        if os.path.exists(self.path):
-            with open(self.path, 'r') as f:
+    def load(self, path: str) -> 'ConfigLoader':
+        if os.path.exists(path):
+            with open(path, 'r') as f:
+                self._data.update(json.load(f))
+        return self
+
+    def apply_env(self, prefix: str = 'CRYPTO_') -> 'ConfigLoader':
+        for key in os.environ:
+            if key.startswith(prefix):
+                clean_key = key[len(prefix):].lower()
+                val = os.environ[key]
                 try:
-                    user_data = json.load(f)
-                    self.data.update({k: v for k, v in user_data.items() if k in self.data})
-                except json.JSONDecodeError:
-                    pass
+                    self._data[clean_key] = json.loads(val)
+                except (json.JSONDecodeError, TypeError):
+                    self._data[clean_key] = val
+        return self
+
+    def __getattr__(self, name: str) -> Any:
+        return self._data.get(name)
 
     def __getitem__(self, key: str) -> Any:
-        return self.data.get(key)
+        return self._data[key]
 
-    def __repr__(self) -> str:
-        return f"CryptoConfig({self.data})"
+    @property
+    def settings(self) -> Dict[str, Any]:
+        return self._data
 
-def load_config(defaults: Dict[str, Any]) -> CryptoConfig:
-    """Factory for config instance with local override logic"""
-    return CryptoConfig(defaults)
-
-if __name__ == '__main__':
-    # Example usage for crypto service
-    settings = load_config({'rpc_url': 'https://mainnet.infura.io', 'timeout': 30})
-    print(f"Active node: {settings['rpc_url']}")
+# usage: cfg = ConfigLoader({'timeout': 30}).load('conf.json').apply_env()
