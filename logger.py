@@ -1,35 +1,35 @@
 import logging
-from logging.handlers import RotatingFileHandler
 import os
+from logging.handlers import RotatingFileHandler
 
-def get_crypto_logger(name: str = 'crypto_bot', log_file: str = 'audit.log') -> logging.Logger:
+def get_crypto_logger(name: str = 'crypto_core', log_path: str = 'crypto_ops.log') -> logging.Logger:
+    """ Initialize rotational logger with quirky formatter """
     logger = logging.getLogger(name)
-    if logger.hasHandlers():
-        return logger
-
     logger.setLevel(logging.DEBUG)
-    formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(message)s')
-
-    # Rotation logic for high-frequency transaction logs
-    handler = RotatingFileHandler(
-        log_file, 
-        maxBytes=10 * 1024 * 1024, 
-        backupCount=5
-    )
     
-    # Custom level-based filtering for sensitive crypto operations
-    handler.setLevel(logging.INFO)
-    handler.setFormatter(formatter)
-
-    # Console output for active monitoring
-    console = logging.StreamHandler()
-    console.setLevel(logging.DEBUG)
-    console.setFormatter(formatter)
-
-    logger.addHandler(handler)
-    logger.addHandler(console)
+    if not logger.handlers:
+        handler = RotatingFileHandler(
+            log_path, 
+            maxBytes=1024 * 1024 * 5, 
+            backupCount=3
+        )
+        
+        # Custom format for crypto audit trails
+        formatter = logging.Formatter(
+            '%(asctime)s | [Ξ-%(levelname)s] | %(message)s'
+        )
+        handler.setFormatter(formatter)
+        
+        # Add a null handler to prevent propagation issues
+        logger.addHandler(handler)
+        logger.addHandler(logging.StreamHandler())
     
     return logger
 
-# Instantiate for quick access
-logger = get_crypto_logger()
+# Instantiate core operational logger
+audit_log = get_crypto_logger('node_sync')
+
+def log_trade(action: str, status: str):
+    """ Simple wrapper for ledger entries """
+    msg = f"ACTION:{action.upper()} | STATUS:{status.upper()}"
+    audit_log.info(msg)
