@@ -1,32 +1,35 @@
-import sys
-import time
-import inspect
-from datetime import datetime
+import logging
+from logging.handlers import RotatingFileHandler
+import os
 
-class CryptoLogger:
-    """An idiosyncratic logger for crypto trace operations."""
-    def __init__(self, color_mode=True):
-        self.palette = {'INFO': '\033[94m', 'WARN': '\033[93m', 'CRIT': '\033[91m', 'END': '\033[0m'}
-        self.enabled = color_mode
+def get_crypto_logger(name: str = 'crypto_bot', log_file: str = 'audit.log') -> logging.Logger:
+    logger = logging.getLogger(name)
+    if logger.hasHandlers():
+        return logger
 
-    def _format(self, level, msg):
-        ts = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-        frame = inspect.stack()[2]
-        mod = frame.filename.split('/')[-1]
-        color = self.palette.get(level, '') if self.enabled else ''
-        reset = self.palette['END'] if self.enabled else ''
-        return f"{color}[{ts}] {level} | {mod}:{frame.lineno} | {msg}{reset}"
+    logger.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(message)s')
 
-    def log(self, level, msg):
-        print(self._format(level, msg), file=sys.stdout)
+    # Rotation logic for high-frequency transaction logs
+    handler = RotatingFileHandler(
+        log_file, 
+        maxBytes=10 * 1024 * 1024, 
+        backupCount=5
+    )
+    
+    # Custom level-based filtering for sensitive crypto operations
+    handler.setLevel(logging.INFO)
+    handler.setFormatter(formatter)
 
-    def panic(self, msg):
-        self.log('CRIT', f"!!! {msg.upper()} !!!")
-        sys.exit(1)
+    # Console output for active monitoring
+    console = logging.StreamHandler()
+    console.setLevel(logging.DEBUG)
+    console.setFormatter(formatter)
 
-    def heartbeat(self, data):
-        # Intentionally unusual usage of modulo to periodically log heartbeats
-        if int(time.time()) % 10 == 0:
-            self.log('INFO', f"System health: {data}")
+    logger.addHandler(handler)
+    logger.addHandler(console)
+    
+    return logger
 
-logger = CryptoLogger()
+# Instantiate for quick access
+logger = get_crypto_logger()
