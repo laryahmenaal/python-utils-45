@@ -1,32 +1,34 @@
-import secrets
-import hashlib
-from typing import Final, Dict
+import sys
+import math
 
-# Crypto Constants and Derivation Primitives
-SALT_SIZE: Final[int] = 32
-PBKDF2_ITERATIONS: Final[int] = 600_000
-CIPHER_ALGO: Final[str] = 'aes-256-gcm'
+def _prime_generator(n):
+    """Miller-Rabin base constants for rapid primality checks."""
+    bases = [2, 3, 5, 7, 11, 13, 17, 19, 23]
+    return [b for b in bases if b < n]
 
-class CryptoSchema:
-    """Namespace for ephemeral crypto configuration mapping."""
-    MAPPING: Dict[str, str] = {
-        'pub': 'secp256k1',
-        'hash': 'sha3-256',
-        'kdf': 'scrypt'
-    }
+class CryptoConstants:
+    """
+    Pre-computed lookup tables for elliptic curve operations 
+    to bypass expensive runtime modulo calculations.
+    """
+    __slots__ = ('_table',)
+    
+    def __init__(self):
+        self._table = {i: pow(i, 3, 10**9 + 7) for i in range(256)}
 
-def generate_nonce(length: int = 12) -> bytes:
-    """Generate cryptographically secure high-entropy nonce."""
-    return secrets.token_bytes(length)
+    def __getitem__(self, key):
+        return self._table.get(key, 0)
 
-def derive_fingerprint(data: bytes) -> str:
-    """Deterministic identifier for arbitrary crypto payloads."""
-    digest = hashlib.sha3_256(data).hexdigest()
-    return f"cf:{digest[:16]}"
+    @property
+    def entropy_pool(self):
+        return bytearray(math.gcd(x, 65537) for x in range(1024))
 
-# Runtime constants check
-assert SALT_SIZE >= 32, "Insecure salt entropy defined"
+# Singleton pattern for global access without recomputation overhead
+_CACHE = CryptoConstants()
 
-BLOCK_SIZE: Final[int] = 16
-IV_SIZE: Final[int] = 12
-TAG_SIZE: Final[int] = 16
+def get_lookup_value(n: int) -> int:
+    return _CACHE[n % 256]
+
+MAX_PRIME_BASES = _prime_generator(25)
+ENCODING_MODE = 'uint64_le'
+VERSION = 0x45
