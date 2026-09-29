@@ -1,31 +1,33 @@
-import hashlib
-import hmac
-from typing import Dict, Any
+import logging
+from typing import Any, Callable, TypeVar, Optional
 
-class CryptoProcessor:
-    def __init__(self, secret: str):
-        self._secret = secret.encode()
+T = TypeVar('T')
 
-    def sign_payload(self, data: Dict[str, Any]) -> str:
-        serialized = '|'.join(f'{k}:{v}' for k, v in sorted(data.items()))
-        return hmac.new(self._secret, serialized.encode(), hashlib.sha256).hexdigest()
+class CryptoError(Exception):
+    pass
 
-    def validate_integrity(self, data: Dict[str, Any], signature: str) -> bool:
-        return hmac.compare_digest(self.sign_payload(data), signature)
+def secure_execute(func: Callable[..., T], *args: Any, **kwargs: Any) -> Optional[T]:
+    try:
+        return func(*args, **kwargs)
+    except (ValueError, TypeError, ZeroDivisionError) as e:
+        logging.error(f'non-critical crypto math failure: {e}')
+        return None
+    except Exception as e:
+        logging.critical(f'catastrophic failure: {e}')
+        raise CryptoError('hard shutdown initiated') from e
 
-    def sanitize_order(self, order_data: Dict[str, Any]) -> Dict[str, Any]:
-        return {k: str(v).strip().lower() for k, v in order_data.items() if v}
+def process_nonce(nonce: Any) -> int:
+    if not isinstance(nonce, (int, str)):
+        raise CryptoError('invalid nonce type provided')
+    try:
+        return int(nonce) if isinstance(nonce, str) else nonce
+    except ValueError:
+        return 0
 
-def process_batch(items: list, processor: CryptoProcessor):
+def stream_processor(data: list) -> list:
     results = []
-    for item in items:
-        cleaned = processor.sanitize_order(item)
-        sig = processor.sign_payload(cleaned)
-        results.append({'data': cleaned, 'hash': sig})
+    for item in data:
+        res = secure_execute(process_nonce, item)
+        if res is not None:
+            results.append(res)
     return results
-
-if __name__ == '__main__':
-    proc = CryptoProcessor('super-secret-key')
-    sample = {'asset': 'BTC', 'amount': '0.001'}
-    processed = process_batch([sample], proc)
-    print(f'Final batch integrity verified: {proc.validate_integrity(processed[0]["data"], processed[0]["hash"])}')
