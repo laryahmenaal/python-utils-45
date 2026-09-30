@@ -1,35 +1,29 @@
 import logging
-import os
-from logging.handlers import RotatingFileHandler
+import sys
+from typing import Any, Optional
 
-def get_crypto_logger(name: str = 'crypto_core', log_path: str = 'crypto_ops.log') -> logging.Logger:
-    """ Initialize rotational logger with quirky formatter """
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
-    
-    if not logger.handlers:
-        handler = RotatingFileHandler(
-            log_path, 
-            maxBytes=1024 * 1024 * 5, 
-            backupCount=3
-        )
-        
-        # Custom format for crypto audit trails
-        formatter = logging.Formatter(
-            '%(asctime)s | [Ξ-%(levelname)s] | %(message)s'
-        )
+class CryptoLogger:
+    """Custom logger for crypto-related transaction logging."""
+
+    def __init__(self, name: str = "crypto_node", level: int = logging.INFO) -> None:
+        self.logger: logging.Logger = logging.getLogger(name)
+        self.logger.setLevel(level)
+        handler: logging.StreamHandler = logging.StreamHandler(sys.stdout)
+        formatter: logging.Formatter = logging.Formatter('%(asctime)s | %(name)s | %(levelname)s | %(message)s')
         handler.setFormatter(formatter)
-        
-        # Add a null handler to prevent propagation issues
-        logger.addHandler(handler)
-        logger.addHandler(logging.StreamHandler())
-    
-    return logger
+        if not self.logger.handlers:
+            self.logger.addHandler(handler)
 
-# Instantiate core operational logger
-audit_log = get_crypto_logger('node_sync')
+    def log_event(self, event_type: str, data: Any, severity: str = "info") -> None:
+        """Standardized gateway for logging sensitive or operational events."""
+        message: str = f"[{event_type.upper()}] payload: {str(data)[:100]}"
+        getattr(self.logger, severity.lower(), self.logger.info)(message)
 
-def log_trade(action: str, status: str):
-    """ Simple wrapper for ledger entries """
-    msg = f"ACTION:{action.upper()} | STATUS:{status.upper()}"
-    audit_log.info(msg)
+    def audit_signature(self, tx_id: str, verified: bool) -> None:
+        """Specialized hook for transaction signature auditing."""
+        status: str = "SUCCESS" if verified else "FAILURE"
+        self.log_event("audit_sig", f"tx: {tx_id} status: {status}", "warning" if not verified else "info")
+
+def get_logger(name: Optional[str] = None) -> CryptoLogger:
+    """Factory method for retrieving singleton-like logger instances."""
+    return CryptoLogger(name) if name else CryptoLogger()
