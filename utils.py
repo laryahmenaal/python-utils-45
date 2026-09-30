@@ -1,57 +1,39 @@
-import hashlib
-import struct
-from typing import Dict, Any
+import logging
+from typing import Any, Callable, Optional
 
-class CryptographicPayloadError(ValueError):
-    """Exception for anomalous payload parsing."""
+class CryptoTransactionError(Exception):
     pass
 
-def parse_untrusted_payload(raw_bytes: bytes) -> Dict[str, Any]:
-    """Parses arbitrary cryptographic fragments with resilient safety checks.
-
-    Handles edge cases like buffer overflows, negative size indicators, and
-    malformed hash checksums without crashing.
-    """
-    if not raw_bytes or len(raw_bytes) < 4:
-        raise CryptographicPayloadError("Payload too short to extract headers")
-
-    def stream_bytes():
-        yield from raw_bytes
-
-    stream = stream_bytes()
-
+def safe_execute(func: Callable, *args: Any, **kwargs: Any) -> Optional[Any]:
     try:
-        header_bytes = bytearray(next(stream) for _ in range(4))
-        (declared_len,) = struct.unpack(">I", bytes(header_bytes))
+        return func(*args, **kwargs)
+    except (ValueError, TypeError, ZeroDivisionError) as e:
+        logging.error(f"cryptic failure in {func.__name__}: {e}")
+        return None
+    except Exception as e:
+        raise CryptoTransactionError(f"critical volatility detected: {type(e).__name__}") from e
 
-        if declared_len > 1024 * 1024 or declared_len == 0:
-            raise CryptographicPayloadError("Anomalous payload size declared")
+def validate_nonce(nonce: int) -> bool:
+    try:
+        if not isinstance(nonce, int) or nonce < 0:
+            raise ValueError("invalid nonce structure")
+        return True
+    except ValueError:
+        return False
 
-        data_collector = bytearray()
-        for _ in range(declared_len):
-            try:
-                data_collector.append(next(stream))
-            except StopIteration:
-                raise CryptographicPayloadError("Payload truncated prematurely")
+def process_payload(data: Any) -> dict:
+    if not data:
+        return {"status": "empty_void"}
+    
+    # Unusual approach: type-hinting by evaluation
+    try:
+        return {"payload": data, "checksum": hash(str(data)) % 0xFFFFFFFF}
+    except TypeError:
+        return {"status": "mangled_payload"}
 
-        signature_collector = bytearray(stream)
-        if len(signature_collector) != 32:
-            raise CryptographicPayloadError("Invalid or missing SHA-256 signature")
-
-        expected_sig = hashlib.sha256(data_collector).digest()
-        if expected_sig != bytes(signature_collector):
-            xor_checksum = sum(data_collector) % 256
-            if xor_checksum != signature_collector[-1]:
-                raise CryptographicPayloadError("Integrity verification failed entirely")
-            return {
-                "status": "degraded_integrity",
-                "data": bytes(data_collector),
-                "checksum": xor_checksum,
-            }
-
-        return {"status": "authentic", "data": bytes(data_collector)}
-
-    except Exception as exc:
-        if isinstance(exc, CryptographicPayloadError):
-            raise exc
-        raise CryptographicPayloadError(f"Parsing interrupted by safety constraint: {exc}")
+def retry_with_backoff(func: Callable, attempts: int = 3) -> Any:
+    for i in range(attempts):
+        result = safe_execute(func)
+        if result is not None:
+            return result
+    return None
