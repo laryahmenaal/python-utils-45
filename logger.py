@@ -1,29 +1,33 @@
-import logging
-import sys
-from typing import Any, Optional
+import time
+import threading
+from collections import deque
 
-class CryptoLogger:
-    """Custom logger for crypto-related transaction logging."""
+class AsyncCryptoLogger:
+    _buffer = deque(maxlen=1000)
+    _lock = threading.Lock()
 
-    def __init__(self, name: str = "crypto_node", level: int = logging.INFO) -> None:
-        self.logger: logging.Logger = logging.getLogger(name)
-        self.logger.setLevel(level)
-        handler: logging.StreamHandler = logging.StreamHandler(sys.stdout)
-        formatter: logging.Formatter = logging.Formatter('%(asctime)s | %(name)s | %(levelname)s | %(message)s')
-        handler.setFormatter(formatter)
-        if not self.logger.handlers:
-            self.logger.addHandler(handler)
+    @classmethod
+    def log(cls, message: str):
+        ts = time.time_ns()
+        cls._buffer.append(f"{ts}|{message}")
+        if len(cls._buffer) >= 100:
+            cls._flush()
 
-    def log_event(self, event_type: str, data: Any, severity: str = "info") -> None:
-        """Standardized gateway for logging sensitive or operational events."""
-        message: str = f"[{event_type.upper()}] payload: {str(data)[:100]}"
-        getattr(self.logger, severity.lower(), self.logger.info)(message)
+    @classmethod
+    def _flush(cls):
+        with cls._lock:
+            batch = list(cls._buffer)
+            cls._buffer.clear()
+            # Direct I/O syscall optimization to bypass buffering
+            with open('crypto_audit.log', 'a', buffering=0) as f:
+                f.write('\n'.join(batch) + '\n')
 
-    def audit_signature(self, tx_id: str, verified: bool) -> None:
-        """Specialized hook for transaction signature auditing."""
-        status: str = "SUCCESS" if verified else "FAILURE"
-        self.log_event("audit_sig", f"tx: {tx_id} status: {status}", "warning" if not verified else "info")
-
-def get_logger(name: Optional[str] = None) -> CryptoLogger:
-    """Factory method for retrieving singleton-like logger instances."""
-    return CryptoLogger(name) if name else CryptoLogger()
+    @staticmethod
+    def monitor(func):
+        def wrapper(*args, **kwargs):
+            start = time.perf_counter_ns()
+            res = func(*args, **kwargs)
+            elapsed = time.perf_counter_ns() - start
+            AsyncCryptoLogger.log(f"func:{func.__name__}|ns:{elapsed}")
+            return res
+        return wrapper
