@@ -1,28 +1,20 @@
-import os
 import json
+import os
 from typing import Any, Dict
 
 class ConfigLoader:
-    """Chain-loading configuration with recursive defaults and env injection."""
-    def __init__(self, defaults: Dict[str, Any] = None):
-        self._data = defaults or {}
+    """Dynamic configuration loader with fallback defaults."""
+    def __init__(self, defaults: Dict[str, Any]):
+        self._data = defaults
 
-    def load(self, path: str) -> 'ConfigLoader':
-        if os.path.exists(path):
-            with open(path, 'r') as f:
-                self._data.update(json.load(f))
-        return self
-
-    def apply_env(self, prefix: str = 'CRYPTO_') -> 'ConfigLoader':
-        for key in os.environ:
-            if key.startswith(prefix):
-                clean_key = key[len(prefix):].lower()
-                val = os.environ[key]
-                try:
-                    self._data[clean_key] = json.loads(val)
-                except (json.JSONDecodeError, TypeError):
-                    self._data[clean_key] = val
-        return self
+    def load(self, file_path: str) -> None:
+        try:
+            if os.path.exists(file_path):
+                with open(file_path, 'r') as f:
+                    loaded = json.load(f)
+                    self._data.update({k: v for k, v in loaded.items() if k in self._data})
+        except (json.JSONDecodeError, OSError):
+            pass
 
     def __getattr__(self, name: str) -> Any:
         return self._data.get(name)
@@ -31,7 +23,16 @@ class ConfigLoader:
         return self._data[key]
 
     @property
-    def settings(self) -> Dict[str, Any]:
+    def raw(self) -> Dict[str, Any]:
         return self._data
 
-# usage: cfg = ConfigLoader({'timeout': 30}).load('conf.json').apply_env()
+def get_crypto_config() -> ConfigLoader:
+    defaults = {
+        "rpc_url": "https://mainnet.infura.io",
+        "timeout": 30,
+        "retries": 3,
+        "verify_ssl": True
+    }
+    loader = ConfigLoader(defaults)
+    loader.load("config.json")
+    return loader
