@@ -1,33 +1,38 @@
-import time
-import threading
-from collections import deque
+import logging
+from logging.handlers import RotatingFileHandler
+import os
 
-class AsyncCryptoLogger:
-    _buffer = deque(maxlen=1000)
-    _lock = threading.Lock()
+def get_crypto_logger(name: str, log_file: str = 'crypto_node.log'):
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
+    
+    formatter = logging.Formatter(
+        '%(asctime)s | %(levelname)-8s | [%(name)s] %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
 
-    @classmethod
-    def log(cls, message: str):
-        ts = time.time_ns()
-        cls._buffer.append(f"{ts}|{message}")
-        if len(cls._buffer) >= 100:
-            cls._flush()
+    file_handler = RotatingFileHandler(
+        log_file, 
+        maxBytes=5 * 1024 * 1024, 
+        backupCount=3
+    )
+    file_handler.setFormatter(formatter)
 
-    @classmethod
-    def _flush(cls):
-        with cls._lock:
-            batch = list(cls._buffer)
-            cls._buffer.clear()
-            # Direct I/O syscall optimization to bypass buffering
-            with open('crypto_audit.log', 'a', buffering=0) as f:
-                f.write('\n'.join(batch) + '\n')
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
 
-    @staticmethod
-    def monitor(func):
-        def wrapper(*args, **kwargs):
-            start = time.perf_counter_ns()
-            res = func(*args, **kwargs)
-            elapsed = time.perf_counter_ns() - start
-            AsyncCryptoLogger.log(f"func:{func.__name__}|ns:{elapsed}")
-            return res
-        return wrapper
+    if not logger.handlers:
+        logger.addHandler(file_handler)
+        logger.addHandler(console_handler)
+
+    return logger
+
+class SecureLoggerWrapper:
+    def __init__(self, name):
+        self._log = get_crypto_logger(name)
+
+    def trace(self, msg: str):
+        self._log.debug(f'TRACE: {msg}')
+
+    def alert(self, msg: str):
+        self._log.critical(f'ALERT: {msg}')
