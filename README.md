@@ -1,23 +1,23 @@
 # python-utils-45
 
-`python-utils-45` is a high-performance Python toolkit designed to streamline common tasks in cryptocurrency trading and blockchain data analysis. It provides robust wrappers for exchange APIs and specialized math utilities for calculating portfolio metrics and market volatility.
+A high-performance Python toolkit designed for seamless interaction with decentralized finance protocols and blockchain data streams. It streamlines crypto-asset monitoring and execution tasks for professional algorithmic traders and developers.
 
 ## Features
 
-*   **Exchange Abstraction Layer:** Standardized interface to interact with major CEXs (Binance, Kraken, Coinbase) using unified request logic and rate-limit handling.
-*   **Real-time Orderbook Analytics:** Optimized functions for calculating Mid-price, Spread, and Orderbook Imbalance with low-latency execution.
-*   **Backtesting Utilities:** Lightweight simulation engine to compute Sharpe ratios, Maximum Drawdown, and ROI on historical OHLCV data.
-*   **Security Signing Helpers:** Built-in HMAC-SHA256 signature generation to securely authenticate private API requests without boilerplate overhead.
+*   **Async WebSocket Streamer:** Real-time, low-latency price tracking for major CEX/DEX pairs with auto-reconnection logic.
+*   **Encrypted Key Manager:** Secure handling of API secrets and private keys using local AES-256 environment variable encryption.
+*   **Gas Estimation Engine:** Predictive gas fee calculation for EVM-compatible chains to optimize transaction throughput and cost.
+*   **Portfolio Snapshotter:** Aggregate token balance reporting across multi-chain wallets in a standardized JSON format.
 
 ## Installation
 
-Install the package via pip:
+Ensure you have Python 3.9+ installed. Install the package via pip:
 
 ```bash
 pip install python-utils-45
 ```
 
-For development mode and access to experimental indicators:
+For local development or custom builds:
 
 ```bash
 git clone https://github.com/Developer/python-utils-45.git
@@ -25,28 +25,23 @@ cd python-utils-45
 pip install -r requirements.txt
 ```
 
-## Usage Example
+## Usage
 
-Easily fetch ticker data and compute volatility using the library's streamlined core:
+Below is a quick example of how to initialize the connection and fetch the current ticker price for ETH/USDT:
 
 ```python
-from crypto_utils import ExchangeClient, Analytics
+from utils_45.client import CryptoClient
 
-# Initialize exchange client
-client = ExchangeClient(api_key='YOUR_KEY', secret='YOUR_SECRET')
+# Initialize client with your API credentials
+client = CryptoClient(api_key="your_api_key", secret="your_secret")
 
-# Fetch live ticker for BTC/USDT
-ticker = client.get_ticker('BTC/USDT')
-
-# Calculate 24h rolling volatility
-vol = Analytics.calculate_volatility(ticker.history(days=1))
-
-print(f"BTC Current Price: {ticker.price}")
-print(f"Rolling Volatility: {vol:.4f}")
+# Fetch latest price
+price_data = client.get_ticker("ETH/USDT")
+print(f"Current Price: {price_data['last']}")
 ```
 
 ## License
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+Distributed under the MIT License. See `LICENSE` for more information.
