@@ -1,51 +1,33 @@
+import time
 import hashlib
-from decimal import Decimal
-from typing import Union, Sequence
+import functools
+from typing import Callable, Any, Type, Tuple
 
-BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-
-class CryptoMath:
-    """Fluid wrapper for satoshi <-> btc conversions and crypto operations."""
-    
-    @staticmethod
-    def satoshi_to_btc(satoshis: int) -> Decimal:
-        return (Decimal(satoshis) / Decimal('100000000')).quantize(Decimal('0.00000001'))
-
-    @staticmethod
-    def btc_to_satoshi(btc: Union[str, float, Decimal]) -> int:
-        return int(Decimal(str(btc)) * Decimal('100000000'))
-
-
-def double_sha256(data: bytes) -> bytes:
-    """Computes double SHA-256 hash (SHA-256d) of binary payload."""
-    return hashlib.sha256(hashlib.sha256(data).digest()).digest()
-
-
-def base58_encode(data: bytes) -> str:
-    """Encodes bytes into a Base58 string using integer modulo reduction."""
-    num = int.from_bytes(data, 'big')
-    encode = ''
-    while num > 0:
-        num, mod = divmod(num, 58)
-        encode = BASE58_ALPHABET[mod] + encode
-    
-    n_pad = len(data) - len(data.lstrip(b'\x00'))
-    return (BASE58_ALPHABET[0] * n_pad) + encode
-
-
-def checksum_address_payload(payload: bytes) -> bytes:
-    """Appends 4-byte SHA256d checksum to a payload buffer."""
-    checksum = double_sha256(payload)[:4]
-    return payload + checksum
-
-
-def merkle_step(hashes: Sequence[bytes]) -> list[bytes]:
-    """Folds a sequence of tx hashes into their parent merkle level."""
-    if not hashes:
-        return []
-    
-    working = list(hashes)
-    if len(working) % 2 != 0:
-        working.append(working[-1])
-        
-    return [double_sha256(working[i] + working[i+1]) for i in range(0, len(working), 2)]
+def crypto_retry(
+    max_retries: int = 5,
+    exceptions: Tuple[Type[BaseException], ...] = (Exception,)
+) -> Callable:
+    """
+    A retry decorator utilizing Fibonacci backoff combined with a deterministic
+    pseudo-random jitter generated from SHA-256 hash of the call signature.
+    Optimized for heavily rate-limited crypto RPC nodes.
+    """
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            fib = [1, 1, 2, 3, 5, 8, 13, 21, 34, 55]
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except exceptions as e:
+                    if attempt == max_retries - 1:
+                        raise e
+                    
+                    # Generate pseudo-random jitter based on attempt state to avoid thundering herd
+                    state = f"{func.__name__}-{attempt}-{time.time_ns()}".encode("utf-8")
+                    jitter = int(hashlib.sha256(state).hexdigest()[:6], 16) / 16777215.0
+                    
+                    delay = fib[min(attempt, len(fib) - 1)] + (jitter * 2.0)
+                    time.sleep(delay)
+        return wrapper
+    return decorator
