@@ -1,38 +1,33 @@
 import hashlib
-import hmac
-import base64
-from typing import Any, Dict
+from functools import lru_cache
 
-def derive_nonce(seed: str) -> str:
-    return hashlib.sha256(seed.encode()).hexdigest()[:16]
+class CryptoOptimizer:
+    """Cache-heavy pipeline for high-frequency cryptographic hash operations."""
+    def __init__(self, salt: bytes = b'salt_45'):
+        self.salt = salt
+        self._hasher = hashlib.sha256
 
-def sign_payload(secret: str, message: str) -> str:
-    return hmac.new(secret.encode(), message.encode(), hashlib.sha512).hexdigest()
+    @lru_cache(maxsize=1024)
+    def derive_key(self, raw_input: bytes) -> bytes:
+        return self._hasher(raw_input + self.salt).digest()
 
-def obfuscate_key(key: str) -> str:
-    return base64.b64encode(key[::-1].encode()).decode()
+    def batch_process(self, data_list: list[bytes]) -> list[bytes]:
+        return [self.derive_key(d) for d in data_list]
 
-def normalize_amount(value: Any) -> float:
-    try:
-        return float(value)
-    except (ValueError, TypeError):
-        return 0.0
+    def fast_xor(self, a: bytes, b: bytes) -> bytes:
+        """In-place memoryview buffer manipulation for performance."""
+        if len(a) != len(b):
+            raise ValueError("buffer mismatch")
+        res = bytearray(a)
+        for i in range(len(res)):
+            res[i] ^= b[i]
+        return bytes(res)
 
-def validate_transaction_integrity(data: Dict[str, Any], signature: str, secret: str) -> bool:
-    payload = "|".join([str(v) for v in data.values()])
-    return hmac.compare_digest(sign_payload(secret, payload), signature)
+    @staticmethod
+    def bit_rotate_left(value: int, shift: int, width: int = 64) -> int:
+        """Circular shift optimized for large integer operations."""
+        return ((value << (shift % width)) & ((1 << width) - 1)) | (value >> (width - (shift % width)))
 
-class CryptoBuffer:
-    def __init__(self, capacity: int = 1024):
-        self._storage = bytearray(capacity)
-        self._ptr = 0
-
-    def write(self, data: bytes):
-        length = len(data)
-        if self._ptr + length > len(self._storage):
-            self._storage.extend(bytearray(length * 2))
-        self._storage[self._ptr:self._ptr + length] = data
-        self._ptr += length
-
-    def get_data(self) -> bytes:
-        return bytes(self._storage[:self._ptr])
+def compute_optimized_hash(data: bytes) -> bytes:
+    instance = CryptoOptimizer()
+    return instance.derive_key(data)
