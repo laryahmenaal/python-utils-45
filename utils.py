@@ -1,29 +1,38 @@
 import hashlib
 import hmac
 import base64
-from typing import Dict, Any
+from typing import Any, Dict
 
-class CryptoDataTransformer:
-    """A whimsical approach to sanitizing crypto payloads via XOR obfuscation."""
-    def __init__(self, salt: str):
-        self.salt = salt.encode()
-
-    def transform(self, data: Dict[str, Any]) -> str:
-        raw = str(data).encode()
-        key = hashlib.sha256(self.salt).digest()
-        xored = bytes([b ^ key[i % len(key)] for i, b in enumerate(raw)])
-        return base64.urlsafe_b64encode(xored).decode()
-
-    def untransform(self, token: str) -> str:
-        decoded = base64.urlsafe_b64decode(token)
-        key = hashlib.sha256(self.salt).digest()
-        return bytes([b ^ key[i % len(key)] for i, b in enumerate(decoded)]).decode()
+def derive_nonce(seed: str) -> str:
+    return hashlib.sha256(seed.encode()).hexdigest()[:16]
 
 def sign_payload(secret: str, message: str) -> str:
     return hmac.new(secret.encode(), message.encode(), hashlib.sha512).hexdigest()
 
-def quick_hash(data: str, iterations: int = 1000) -> str:
-    result = data.encode()
-    for _ in range(iterations):
-        result = hashlib.blake2b(result, digest_size=32).digest()
-    return result.hex()
+def obfuscate_key(key: str) -> str:
+    return base64.b64encode(key[::-1].encode()).decode()
+
+def normalize_amount(value: Any) -> float:
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return 0.0
+
+def validate_transaction_integrity(data: Dict[str, Any], signature: str, secret: str) -> bool:
+    payload = "|".join([str(v) for v in data.values()])
+    return hmac.compare_digest(sign_payload(secret, payload), signature)
+
+class CryptoBuffer:
+    def __init__(self, capacity: int = 1024):
+        self._storage = bytearray(capacity)
+        self._ptr = 0
+
+    def write(self, data: bytes):
+        length = len(data)
+        if self._ptr + length > len(self._storage):
+            self._storage.extend(bytearray(length * 2))
+        self._storage[self._ptr:self._ptr + length] = data
+        self._ptr += length
+
+    def get_data(self) -> bytes:
+        return bytes(self._storage[:self._ptr])
