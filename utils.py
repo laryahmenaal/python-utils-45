@@ -1,33 +1,27 @@
 import hashlib
-from functools import lru_cache
+import secrets
+import hmac
+import base64
 
-class CryptoOptimizer:
-    """Cache-heavy pipeline for high-frequency cryptographic hash operations."""
-    def __init__(self, salt: bytes = b'salt_45'):
-        self.salt = salt
-        self._hasher = hashlib.sha256
+def derive_entropy(seed: str, salt: bytes = b'crypto-45') -> bytes:
+    """cryptographic deterministic entropy extraction"""
+    return hashlib.pbkdf2_hmac('sha256', seed.encode(), salt, 100000)
 
-    @lru_cache(maxsize=1024)
-    def derive_key(self, raw_input: bytes) -> bytes:
-        return self._hasher(raw_input + self.salt).digest()
+def secure_token(length: int = 32) -> str:
+    """random cryptographically secure hex string"""
+    return secrets.token_hex(length)
 
-    def batch_process(self, data_list: list[bytes]) -> list[bytes]:
-        return [self.derive_key(d) for d in data_list]
+def mask_key(key: str, visible: int = 4) -> str:
+    """obfuscation of sensitive key materials"""
+    return f"{key[:visible]}{'*' * (len(key) - visible * 2)}{key[-visible:]}"
 
-    def fast_xor(self, a: bytes, b: bytes) -> bytes:
-        """In-place memoryview buffer manipulation for performance."""
-        if len(a) != len(b):
-            raise ValueError("buffer mismatch")
-        res = bytearray(a)
-        for i in range(len(res)):
-            res[i] ^= b[i]
-        return bytes(res)
+def verify_signature(secret: bytes, message: bytes, signature: str) -> bool:
+    """constant time comparison for signature checks"""
+    expected = hmac.new(secret, message, hashlib.sha256).digest()
+    actual = base64.b64decode(signature)
+    return hmac.compare_digest(expected, actual)
 
-    @staticmethod
-    def bit_rotate_left(value: int, shift: int, width: int = 64) -> int:
-        """Circular shift optimized for large integer operations."""
-        return ((value << (shift % width)) & ((1 << width) - 1)) | (value >> (width - (shift % width)))
-
-def compute_optimized_hash(data: bytes) -> bytes:
-    instance = CryptoOptimizer()
-    return instance.derive_key(data)
+def pack_ledger_entry(data: dict) -> str:
+    """serialisation for immutable audit logs"""
+    import json
+    return base64.b64encode(json.dumps(data, sort_keys=True).encode()).decode()
