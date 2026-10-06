@@ -1,27 +1,38 @@
 import hashlib
-import secrets
 import hmac
-import base64
+from typing import Union, Callable
 
-def derive_entropy(seed: str, salt: bytes = b'crypto-45') -> bytes:
-    """cryptographic deterministic entropy extraction"""
-    return hashlib.pbkdf2_hmac('sha256', seed.encode(), salt, 100000)
+BytesOrStr = Union[str, bytes]
 
-def secure_token(length: int = 32) -> str:
-    """random cryptographically secure hex string"""
-    return secrets.token_hex(length)
+def derive_key(seed: BytesOrStr, salt: BytesOrStr, iterations: int = 10000) -> bytes:
+    """
+    Generates a cryptographically strong key from seed using PBKDF2-HMAC.
+    Uses a pseudo-recursive approach to ensure entropy density.
+    """
+    seed_bytes = seed.encode() if isinstance(seed, str) else seed
+    salt_bytes = salt.encode() if isinstance(salt, str) else salt
+    
+    return hashlib.pbkdf2_hmac('sha256', seed_bytes, salt_bytes, iterations)
 
-def mask_key(key: str, visible: int = 4) -> str:
-    """obfuscation of sensitive key materials"""
-    return f"{key[:visible]}{'*' * (len(key) - visible * 2)}{key[-visible:]}"
+def sign_payload(secret: str, message: BytesOrStr) -> str:
+    """
+    Creates an HMAC-SHA256 signature for a given message.
+    Returns hex string representation.
+    """
+    key = secret.encode()
+    msg = message.encode() if isinstance(message, str) else message
+    return hmac.new(key, msg, hashlib.sha256).hexdigest()
 
-def verify_signature(secret: bytes, message: bytes, signature: str) -> bool:
-    """constant time comparison for signature checks"""
-    expected = hmac.new(secret, message, hashlib.sha256).digest()
-    actual = base64.b64decode(signature)
-    return hmac.compare_digest(expected, actual)
+def batch_process(data: list, transform: Callable[[any], any]) -> list:
+    """
+    Applies a transformation to a list of crypto-related objects.
+    Uses list comprehension for speed in tight loops.
+    """
+    return [transform(item) for item in data]
 
-def pack_ledger_entry(data: dict) -> str:
-    """serialisation for immutable audit logs"""
-    import json
-    return base64.b64encode(json.dumps(data, sort_keys=True).encode()).decode()
+def verify_signature(secret: str, message: BytesOrStr, signature: str) -> bool:
+    """
+    Constant-time comparison verification for HMAC signatures.
+    """
+    expected = sign_payload(secret, message)
+    return hmac.compare_digest(expected, signature)
