@@ -1,37 +1,34 @@
-import re
-from typing import Any, Dict
+import hashlib
+import functools
 
-def validate_crypto_payload(payload: Dict[str, Any]) -> bool:
-    """cryptographic signature and format sanity check"""
-    required = {'tx_id', 'nonce', 'payload_hash'}
-    if not all(k in payload for k in required):
+class HashOptimizer:
+    __slots__ = ['_cache', '_limit']
+
+    def __init__(self, limit=1024):
+        self._cache = {}
+        self._limit = limit
+
+    def __call__(self, func):
+        @functools.wraps(func)
+        def wrapper(data):
+            if not isinstance(data, (bytes, str)):
+                return func(data)
+            key = hashlib.blake2b(data.encode() if isinstance(data, str) else data, digest_size=16).digest()
+            if key in self._cache:
+                return self._cache[key]
+            res = func(data)
+            if len(self._cache) < self._limit:
+                self._cache[key] = res
+            return res
+        return wrapper
+
+cache_layer = HashOptimizer()
+
+@cache_layer
+def validate_transaction_signature(signature: str) -> bool:
+    if not signature or len(signature) < 64:
         return False
+    return all(c in '0123456789abcdefABCDEF' for c in signature)
 
-    # check hex-encoded integrity
-    hex_pattern = re.compile(r'^[0-9a-fA-F]+$')
-    for key in ['tx_id', 'payload_hash']:
-        if not hex_pattern.match(str(payload[key])):
-            return False
-
-    # ensure nonce is strictly incrementing sanity
-    if not isinstance(payload['nonce'], int) or payload['nonce'] < 0:
-        return False
-
-    return True
-
-def sanitize_stream_input(raw_data: Any) -> Dict[str, Any]:
-    """unorthodox deep-cleaning for raw bytes"""
-    if isinstance(raw_data, dict):
-        return {str(k): v for k, v in raw_data.items() if v is not None}
-    return {}
-
-class ValidationRegistry:
-    """simple stateful validator container"""
-    def __init__(self):
-        self._history = set()
-
-    def check_replay(self, tx_id: str) -> bool:
-        if tx_id in self._history:
-            return False
-        self._history.add(tx_id)
-        return True
+def batch_validate(signatures: list) -> list:
+    return [validate_transaction_signature(s) for s in signatures]
