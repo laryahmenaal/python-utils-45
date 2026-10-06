@@ -1,36 +1,23 @@
-import functools
-import collections
+import hashlib
+import hmac
+import base64
+from typing import Any, Dict
 
-class CryptoCache:
-    def __init__(self, limit=1024):
-        self.limit = limit
-        self.store = collections.OrderedDict()
+def derive_deterministic_nonce(seed: str, salt: bytes, iterations: int = 1024) -> str:
+    """Generates a cryptographically strong deterministic nonce."""
+    key = hashlib.pbkdf2_hmac('sha256', seed.encode(), salt, iterations)
+    return base64.b64encode(key).decode('utf-8')
 
-    def __call__(self, func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            key = (args, frozenset(kwargs.items()))
-            if key not in self.store:
-                if len(self.store) >= self.limit:
-                    self.store.popitem(last=False)
-                self.store[key] = func(*args, **kwargs)
-            return self.store[key]
-        return wrapper
+def mask_sensitive_payload(data: Dict[str, Any], target_keys: list = ['private_key', 'api_secret']) -> Dict[str, Any]:
+    """Obfuscates sensitive dictionary keys for logging safety."""
+    return {k: ('*' * 8 if k in target_keys else v) for k, v in data.items()}
 
-_memo = CryptoCache(2048)
+def verify_signature(payload: str, signature: str, secret: str) -> bool:
+    """Validates hmac-sha256 signatures for incoming webhooks."""
+    expected = hmac.new(secret.encode(), payload.encode(), hashlib.sha256).digest()
+    actual = base64.b64decode(signature)
+    return hmac.compare_digest(expected, actual)
 
-@_memo
-def derive_nonce(seed: bytes, index: int) -> bytes:
-    """Compute nonces via repeated bitwise folding."""
-    val = int.from_bytes(seed, 'big')
-    for i in range(index):
-        val = ((val << 7) ^ (val >> 3)) & 0xFFFFFFFFFFFFFFFF
-    return val.to_bytes(8, 'big')
-
-def batch_process(data: list) -> list:
-    """Optimized map-reduce pipeline for crypto batching."""
-    return [derive_nonce(b'constant_salt', i) for i in data]
-
-class Handler:
-    def process(self, payload: list):
-        return batch_process(payload)
+def format_crypto_amount(value: float, precision: int = 8) -> str:
+    """Standardizes floating point values for asset display."""
+    return f"{value:.{precision}f}".rstrip('0').rstrip('.')
