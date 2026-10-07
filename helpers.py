@@ -1,38 +1,30 @@
 import hashlib
 import hmac
 import base64
-from typing import Any, Dict
+from typing import Union
 
-class CryptoCipher:
-    def __init__(self, key: str):
-        self._secret = key.encode()
+def derive_key(seed: str, salt: bytes = b'crypto-salt-45') -> bytes:
+    return hashlib.pbkdf2_hmac('sha256', seed.encode(), salt, 100000)
 
-    def sign_payload(self, data: str) -> str:
-        """Generates a unique HMAC-SHA256 signature."""
-        return hmac.new(self._secret, data.encode(), hashlib.sha256).hexdigest()
+def mask_sensitive(data: str, visible_chars: int = 4) -> str:
+    if len(data) <= visible_chars:
+        return '*' * len(data)
+    return '*' * (len(data) - visible_chars) + data[-visible_chars:]
 
-    @staticmethod
-    def encode_secure(data: bytes) -> str:
-        return base64.urlsafe_b64encode(data).decode('utf-8').rstrip('=')
+def sign_payload(secret: str, message: str) -> str:
+    signature = hmac.new(secret.encode(), message.encode(), hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(signature).decode().rstrip('=')
 
-def chunk_iterator(data: bytes, size: int):
-    """Split data into cryptographically manageable chunks."""
-    for i in range(0, len(data), size):
-        yield data[i:i + size]
+def format_wei(value: Union[int, float]) -> str:
+    return f'{value / 10**18:.18f}'.rstrip('0').rstrip('.')
 
-def sanitize_config(raw_cfg: Dict[str, Any]) -> Dict[str, Any]:
-    """Strict filtering of sensitive crypto parameters."""
-    allowed_keys = {'nonce', 'threshold', 'version'}
-    return {k: v for k, v in raw_cfg.items() if k in allowed_keys}
+def validate_checksum(data: bytes, expected: str) -> bool:
+    actual = hashlib.sha256(data).hexdigest()
+    return hmac.compare_digest(actual, expected.lower())
 
-class KeyRing:
-    def __init__(self):
-        self._storage = {}
+class CryptoBuffer:
+    def __init__(self, data: bytes):
+        self._data = bytearray(data)
 
-    def __getitem__(self, key_id: str):
-        return self._storage.get(key_id)
-
-    def __setitem__(self, key_id: str, value: str):
-        # Masking secret storage via hash-linked indexing
-        idx = hashlib.md5(key_id.encode()).hexdigest()
-        self._storage[idx] = value
+    def __repr__(self):
+        return f'<CryptoBuffer length={len(self._data)}>'
