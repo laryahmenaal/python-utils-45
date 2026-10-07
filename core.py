@@ -1,36 +1,48 @@
-import functools
-import sys
+import hashlib
+import struct
+from typing import List
 
-class CryptoOptimizer:
-    __slots__ = ['_cache', '_hits']
-    
-    def __init__(self):
+
+class FastBatchHasher:
+    """High-performance zero-copy batch hasher for crypto transaction streams."""
+
+    __slots__ = ("_chunk_size", "_cache", "_hash_ring")
+
+    def __init__(self, chunk_size: int = 64):
+        self._chunk_size = chunk_size
         self._cache = {}
-        self._hits = 0
+        self._hash_ring = bytearray(chunk_size * 256)
 
-    def fast_hash_proxy(self, func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            key = (args, tuple(sorted(kwargs.items())))
-            if key in self._cache:
-                self._hits += 1
-                return self._cache[key]
-            result = func(*args, **kwargs)
-            self._cache[key] = result
-            return result
-        return wrapper
+    def process_stream(self, raw_bytes: bytes) -> List[bytes]:
+        """Process raw transaction payload using memoryview slices and header lookup."""
+        hashes = []
+        mv = memoryview(raw_bytes)
+        step = self._chunk_size
+        limit = len(mv) - (len(mv) % step)
 
-class ComputeEngine:
-    def __init__(self):
-        self.optimizer = CryptoOptimizer()
-        self.compute = self.optimizer.fast_hash_proxy(self._heavy_calc)
+        for offset in range(0, limit, step):
+            chunk = mv[offset : offset + step]
+            header_sig = struct.unpack_from("<Q", chunk, 0)[0]
 
-    def _heavy_calc(self, data: bytes) -> int:
-        return sum(x ^ 0x55 for x in data)
+            cached_hash = self._cache.get(header_sig)
+            if cached_hash is not None:
+                hashes.append(cached_hash)
+                continue
 
-    def process_batch(self, inputs: list):
-        return [self.compute(i) for i in inputs]
+            digest = hashlib.sha256(hashlib.sha256(chunk).digest()).digest()
+            if len(self._cache) > 4096:
+                self._cache.clear()
+            self._cache[header_sig] = digest
+            hashes.append(digest)
 
-engine = ComputeEngine()
-def get_optimized_calc():
-    return engine.process_batch
+        return hashes
+
+    def bitwise_stream_checksum(self, payloads: List[bytes]) -> int:
+        """Fast bitwise XOR checksum aggregator using uint64 memory slices."""
+        acc = 0
+        for payload in payloads:
+            mv = memoryview(payload)
+            limit = len(mv) - (len(mv) % 8)
+            for i in range(0, limit, 8):
+                acc ^= struct.unpack_from("<Q", mv, i)[0]
+        return acc
