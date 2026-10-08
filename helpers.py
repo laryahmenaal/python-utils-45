@@ -1,30 +1,33 @@
+from typing import Union, List, Callable, Any
 import hashlib
-import hmac
-import base64
-from typing import Union
 
-def derive_key(seed: str, salt: bytes = b'crypto-salt-45') -> bytes:
-    return hashlib.pbkdf2_hmac('sha256', seed.encode(), salt, 100000)
+def hash_payload(data: Union[str, bytes], algorithm: str = 'sha256') -> str:
+    """Produce cryptographic hash of input data using dynamic algorithm dispatch."""
+    hasher: Callable[[bytes], Any] = getattr(hashlib, algorithm)
+    if isinstance(data, str):
+        data = data.encode('utf-8')
+    return hasher(data).hexdigest()
 
-def mask_sensitive(data: str, visible_chars: int = 4) -> str:
-    if len(data) <= visible_chars:
-        return '*' * len(data)
-    return '*' * (len(data) - visible_chars) + data[-visible_chars:]
+def normalize_keys(payload: dict) -> dict:
+    """Recursive transformation of dictionary keys to snake_case format."""
+    normalized = {}
+    for k, v in payload.items():
+        key = ''.join(['_' + i.lower() if i.isupper() else i for i in k]).lstrip('_')
+        normalized[key] = normalize_keys(v) if isinstance(v, dict) else v
+    return normalized
 
-def sign_payload(secret: str, message: str) -> str:
-    signature = hmac.new(secret.encode(), message.encode(), hashlib.sha256).digest()
-    return base64.urlsafe_b64encode(signature).decode().rstrip('=')
+def batch_process(items: List[Any], func: Callable[[Any], Any]) -> List[Any]:
+    """Functional application of logic across crypto-asset lists."""
+    return [func(item) for item in items]
 
-def format_wei(value: Union[int, float]) -> str:
-    return f'{value / 10**18:.18f}'.rstrip('0').rstrip('.')
+class CipherPipe:
+    """Chainable operation pipeline for byte-level transformations."""
+    def __init__(self, seed: bytes) -> None:
+        self.seed = seed
 
-def validate_checksum(data: bytes, expected: str) -> bool:
-    actual = hashlib.sha256(data).hexdigest()
-    return hmac.compare_digest(actual, expected.lower())
+    def execute(self, transform: Callable[[bytes], bytes]) -> 'CipherPipe':
+        self.seed = transform(self.seed)
+        return self
 
-class CryptoBuffer:
-    def __init__(self, data: bytes):
-        self._data = bytearray(data)
-
-    def __repr__(self):
-        return f'<CryptoBuffer length={len(self._data)}>'
+    def finalize(self) -> bytes:
+        return self.seed
