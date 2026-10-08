@@ -1,31 +1,42 @@
 import os
-import json
-from typing import Any, Dict
+from typing import Any, Type
 
-class ConfigLoader:
-    """Cryptographic configuration orchestrator with fallback defaults."""
-    def __init__(self, defaults: Dict[str, Any]):
-        self._data = defaults
+class ConfigValue:
+    """Descriptor resolving environment overrides with automatic coercion."""
+    def __init__(self, default: Any, expected_type: Type):
+        self.default = default
+        self.expected_type = expected_type
+        self.name = ""
 
-    def load(self, path: str) -> None:
-        if os.path.exists(path):
-            with open(path, 'r') as f:
-                raw = json.load(f)
-                self._data.update({k: v for k, v in raw.items() if v is not None})
+    def __set_name__(self, owner, name: str):
+        self.name = name
 
-    def __getitem__(self, key: str) -> Any:
-        return self._data[key]
+    def __get__(self, instance, owner) -> Any:
+        if instance is None:
+            return self
+        
+        env_key = f"{instance._prefix}{self.name}"
+        raw_value = os.getenv(env_key)
+        if raw_value is None:
+            return self.default
 
-    def __getattr__(self, name: str) -> Any:
-        return self._data.get(name)
+        try:
+            if self.expected_type is bool:
+                return raw_value.lower() in ("true", "1", "yes", "on")
+            if self.expected_type is bytes:
+                return raw_value.encode("utf-8")
+            return self.expected_type(raw_value)
+        except (ValueError, TypeError):
+            return self.default
 
-def initialize_crypto_config(env_path: str = "config.json") -> ConfigLoader:
-    defaults = {
-        "kdf_iterations": 100000,
-        "cipher_suite": "AES-256-GCM",
-        "entropy_source": "/dev/urandom",
-        "key_rotation_days": 30
-    }
-    loader = ConfigLoader(defaults)
-    loader.load(env_path)
-    return loader
+
+class CryptoConfig:
+    """Central crypto parameter registry powered by descriptor values."""
+    SALT_LENGTH = ConfigValue(32, int)
+    ITERATIONS = ConfigValue(100_000, int)
+    HASH_ALGORITHM = ConfigValue("sha256", str)
+    ENABLE_HARDWARE_ACCELERATION = ConfigValue(True, bool)
+    KEY_DERIVATION_PEPPER = ConfigValue(b"default_pepper_key", bytes)
+
+    def __init__(self, prefix: str = "CRYPTO_"):
+        self._prefix = prefix
