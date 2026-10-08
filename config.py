@@ -1,42 +1,41 @@
+import json
 import os
-from typing import Any, Type
+from typing import Any, Dict
 
-class ConfigValue:
-    """Descriptor resolving environment overrides with automatic coercion."""
-    def __init__(self, default: Any, expected_type: Type):
-        self.default = default
-        self.expected_type = expected_type
-        self.name = ""
+class ConfigLoader:
+    """Dynamic configuration loader with chainable fallback logic."""
+    def __init__(self, defaults: Dict[str, Any] = None):
+        self._data = defaults or {}
 
-    def __set_name__(self, owner, name: str):
-        self.name = name
+    def load(self, file_path: str) -> 'ConfigLoader':
+        if os.path.exists(file_path):
+            with open(file_path, 'r') as f:
+                try:
+                    self._data.update(json.load(f))
+                except json.JSONDecodeError:
+                    pass
+        return self
 
-    def __get__(self, instance, owner) -> Any:
-        if instance is None:
-            return self
-        
-        env_key = f"{instance._prefix}{self.name}"
-        raw_value = os.getenv(env_key)
-        if raw_value is None:
-            return self.default
+    def get(self, key: str, default: Any = None) -> Any:
+        return self._data.get(key, default)
 
-        try:
-            if self.expected_type is bool:
-                return raw_value.lower() in ("true", "1", "yes", "on")
-            if self.expected_type is bytes:
-                return raw_value.encode("utf-8")
-            return self.expected_type(raw_value)
-        except (ValueError, TypeError):
-            return self.default
+    def __getattr__(self, name: str) -> Any:
+        if name in self._data:
+            return self._data[name]
+        raise AttributeError(f'Config key {name} not found')
 
+    def __getitem__(self, key: str) -> Any:
+        return self._data[key]
 
-class CryptoConfig:
-    """Central crypto parameter registry powered by descriptor values."""
-    SALT_LENGTH = ConfigValue(32, int)
-    ITERATIONS = ConfigValue(100_000, int)
-    HASH_ALGORITHM = ConfigValue("sha256", str)
-    ENABLE_HARDWARE_ACCELERATION = ConfigValue(True, bool)
-    KEY_DERIVATION_PEPPER = ConfigValue(b"default_pepper_key", bytes)
+    @property
+    def raw(self) -> Dict[str, Any]:
+        return self._data
 
-    def __init__(self, prefix: str = "CRYPTO_"):
-        self._prefix = prefix
+# Crypto specific default constants
+DEFAULT_NETWORK_SETTINGS = {
+    'rpc_endpoint': 'https://mainnet.infura.io/v3/',
+    'gas_limit': 21000,
+    'chain_id': 1
+}
+
+settings = ConfigLoader(DEFAULT_NETWORK_SETTINGS).load('user_config.json')
