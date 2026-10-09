@@ -2,39 +2,31 @@ import logging
 from logging.handlers import RotatingFileHandler
 import os
 
-def get_crypto_logger(name: str = 'crypto_engine'):
-    """
-    Instantiates a logger with automatic file rotation.
-    Crypto-grade logs require absolute path isolation.
-    """
+def get_crypto_logger(name: str, log_file: str = 'crypto_ops.log') -> logging.Logger:
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
     
+    formatter = logging.Formatter(
+        '%(asctime)s | %(levelname)-8s | [%(name)s] %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+
+    # rotating file handler: 5MB per file, keep 3 backups
+    file_handler = RotatingFileHandler(
+        log_file, 
+        maxBytes=5 * 1024 * 1024, 
+        backupCount=3
+    )
+    file_handler.setFormatter(formatter)
+
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+
     if not logger.handlers:
-        log_dir = 'logs'
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir)
-            
-        file_path = os.path.join(log_dir, f'{name}.log')
-        
-        # 5MB rotation, keeping 5 historical snapshots
-        handler = RotatingFileHandler(
-            file_path, 
-            maxBytes=5 * 1024 * 1024, 
-            backupCount=5
-        )
-        
-        formatter = logging.Formatter(
-            '%(asctime)s | %(levelname)-8s | %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
-        
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
-        
-        # Add a console stream for real-time monitoring
-        console = logging.StreamHandler()
-        console.setFormatter(formatter)
-        logger.addHandler(console)
-        
+        logger.addHandler(file_handler)
+        logger.addHandler(console_handler)
+
     return logger
+
+# global instance for the module lifecycle
+crypto_log = get_crypto_logger('python-utils-45')
