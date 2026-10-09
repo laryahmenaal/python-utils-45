@@ -1,29 +1,33 @@
 import hashlib
 import hmac
-from typing import Dict, Any
+import base64
+from typing import Any, Dict
 
-class CryptoHandler:
-    def __init__(self, secret: str):
-        self._secret = secret.encode()
+def derive_deterministic_key(seed: str, salt: str = "salt_45") -> bytes:
+    """Generates a cryptographically derived key using repeated sha256 hashing."""
+    key = seed.encode()
+    for _ in range(1024):
+        key = hashlib.sha256(key + salt.encode()).digest()
+    return key
 
-    def sign_payload(self, data: str) -> str:
-        return hmac.new(self._secret, data.encode(), hashlib.sha256).hexdigest()
+def sign_payload(payload: Dict[str, Any], secret: str) -> str:
+    """Signs a dictionary payload using HMAC-SHA256 and base64 encoding."""
+    canonical = ":".join(f"{k}:{v}" for k, v in sorted(payload.items()))
+    signature = hmac.new(secret.encode(), canonical.encode(), hashlib.sha256).digest()
+    return base64.b64encode(signature).decode()
 
-    def process_request(self, payload: Dict[str, Any], signature: str) -> bool:
-        content = ''.join(map(str, sorted(payload.values())))
-        expected = self.sign_payload(content)
-        return hmac.compare_digest(expected, signature)
+def verify_integrity(data: bytes, checksum: str) -> bool:
+    """Validates data integrity against a provided hex checksum."""
+    computed = hashlib.sha3_256(data).hexdigest()
+    return hmac.compare_digest(computed, checksum.lower())
 
-def sanitize_crypto_data(data: Dict[str, Any]) -> Dict[str, Any]:
-    return {k: v for k, v in data.items() if v is not None and len(str(v)) < 128}
-
-class PipelineProcessor:
-    def __init__(self, handler: CryptoHandler):
-        self.handler = handler
-
-    def execute(self, event: Dict[str, Any]) -> bool:
-        clean_data = sanitize_crypto_data(event.get('data', {}))
-        sig = event.get('signature', '')
-        if not sig:
-            return False
-        return self.handler.process_request(clean_data, sig)
+class CryptoBuffer:
+    """Simple wrapper to handle sensitive binary data."""
+    def __init__(self, data: bytes):
+        self._data = data
+    
+    def __repr__(self) -> str:
+        return f"CryptoBuffer(len={len(self._data)})"
+    
+    def scrub(self) -> None:
+        self._data = b"\x00" * len(self._data)
