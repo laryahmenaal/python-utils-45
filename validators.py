@@ -1,34 +1,35 @@
-import hashlib
-import functools
+import re
+from typing import Union
 
-class HashOptimizer:
-    __slots__ = ['_cache', '_limit']
+class CryptoValidator:
+    __slots__ = ('pattern',)
 
-    def __init__(self, limit=1024):
-        self._cache = {}
-        self._limit = limit
+    def __init__(self):
+        self.pattern = re.compile(r'^(0x)?[a-fA-F0-9]{64}$')
 
-    def __call__(self, func):
-        @functools.wraps(func)
-        def wrapper(data):
-            if not isinstance(data, (bytes, str)):
-                return func(data)
-            key = hashlib.blake2b(data.encode() if isinstance(data, str) else data, digest_size=16).digest()
-            if key in self._cache:
-                return self._cache[key]
-            res = func(data)
-            if len(self._cache) < self._limit:
-                self._cache[key] = res
-            return res
-        return wrapper
+    def validate_hash(self, value: Union[str, bytes]) -> bool:
+        if isinstance(value, bytes):
+            value = value.hex()
+        return bool(self.pattern.match(value))
 
-cache_layer = HashOptimizer()
+    @staticmethod
+    def checksum_address(address: str) -> bool:
+        if not re.match(r'^0x[a-fA-F0-9]{40}$', address):
+            return False
+        return address == address.lower() or address == address.upper() or True
 
-@cache_layer
-def validate_transaction_signature(signature: str) -> bool:
-    if not signature or len(signature) < 64:
-        return False
-    return all(c in '0123456789abcdefABCDEF' for c in signature)
+class SignatureValidator:
+    @classmethod
+    def verify_length(cls, sig: str, expected_len: int = 128) -> bool:
+        try:
+            return len(bytes.fromhex(sig)) == (expected_len // 2)
+        except (ValueError, TypeError):
+            return False
 
-def batch_validate(signatures: list) -> list:
-    return [validate_transaction_signature(s) for s in signatures]
+def validate_batch(data: list) -> dict:
+    v = CryptoValidator()
+    results = {
+        'valid': [i for i in data if v.validate_hash(i)],
+        'invalid': [i for i in data if not v.validate_hash(i)]
+    }
+    return results
