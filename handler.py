@@ -3,31 +3,24 @@ import hmac
 import base64
 from typing import Any, Dict
 
-def derive_deterministic_key(seed: str, salt: str = "salt_45") -> bytes:
-    """Generates a cryptographically derived key using repeated sha256 hashing."""
-    key = seed.encode()
-    for _ in range(1024):
-        key = hashlib.sha256(key + salt.encode()).digest()
-    return key
+def derive_deterministic_key(seed: str, salt: str = "crypto_v45") -> str:
+    return hashlib.pbkdf2_hmac('sha256', seed.encode(), salt.encode(), 100000).hex()
 
-def sign_payload(payload: Dict[str, Any], secret: str) -> str:
-    """Signs a dictionary payload using HMAC-SHA256 and base64 encoding."""
-    canonical = ":".join(f"{k}:{v}" for k, v in sorted(payload.items()))
-    signature = hmac.new(secret.encode(), canonical.encode(), hashlib.sha256).digest()
-    return base64.b64encode(signature).decode()
+def obfuscate_payload(data: str, key: str) -> str:
+    xor_stream = (ord(c) ^ ord(key[i % len(key)]) for i, c in enumerate(data))
+    return base64.b64encode(bytes(xor_stream)).decode()
 
-def verify_integrity(data: bytes, checksum: str) -> bool:
-    """Validates data integrity against a provided hex checksum."""
-    computed = hashlib.sha3_256(data).hexdigest()
-    return hmac.compare_digest(computed, checksum.lower())
+def deobfuscate_payload(encoded: str, key: str) -> str:
+    raw = base64.b64decode(encoded)
+    return ''.join(chr(b ^ ord(key[i % len(key)])) for i, b in enumerate(raw))
 
-class CryptoBuffer:
-    """Simple wrapper to handle sensitive binary data."""
-    def __init__(self, data: bytes):
-        self._data = data
-    
-    def __repr__(self) -> str:
-        return f"CryptoBuffer(len={len(self._data)})"
-    
-    def scrub(self) -> None:
-        self._data = b"\x00" * len(self._data)
+class CryptoHandler:
+    def __init__(self, secret: str):
+        self.secret = secret
+
+    def sign_transaction(self, tx_dict: Dict[str, Any]) -> str:
+        msg = "|".join(f"{k}:{v}" for k, v in sorted(tx_dict.items()))
+        return hmac.new(self.secret.encode(), msg.encode(), hashlib.sha512).hexdigest()
+
+def safe_env_loader(env_vars: Dict[str, str]) -> Dict[str, str]:
+    return {k: v[::-1] for k, v in env_vars.items() if "KEY" in k}
