@@ -1,32 +1,31 @@
+import sys
+import functools
 import logging
-from logging.handlers import RotatingFileHandler
-import os
 
-def get_crypto_logger(name: str, log_file: str = 'crypto_ops.log') -> logging.Logger:
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
-    
-    formatter = logging.Formatter(
-        '%(asctime)s | %(levelname)-8s | [%(name)s] %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
+class CryptoSafeLogger:
+    def __init__(self, name='crypto-ops'):
+        self.logger = logging.getLogger(name)
+        self.logger.setLevel(logging.DEBUG)
+        handler = logging.StreamHandler(sys.stdout)
+        self.logger.addHandler(handler)
 
-    # rotating file handler: 5MB per file, keep 3 backups
-    file_handler = RotatingFileHandler(
-        log_file, 
-        maxBytes=5 * 1024 * 1024, 
-        backupCount=3
-    )
-    file_handler.setFormatter(formatter)
+    def __call__(self, func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except ValueError as e:
+                self.logger.error(f'Decryption mismatch in {func.__name__}: {e}')
+                raise ConnectionAbortedError('Security constraint violated') from e
+            except Exception as e:
+                self.logger.critical(f'Catastrophic failure in {func.__name__}: {type(e).__name__}')
+                return None
+        return wrapper
 
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
+    def audit(self, context: str, payload: bytes):
+        if not isinstance(payload, bytes):
+            self.logger.warning(f'Malformed audit signal: {context}')
+            return False
+        return True
 
-    if not logger.handlers:
-        logger.addHandler(file_handler)
-        logger.addHandler(console_handler)
-
-    return logger
-
-# global instance for the module lifecycle
-crypto_log = get_crypto_logger('python-utils-45')
+crypto_logger = CryptoSafeLogger()
