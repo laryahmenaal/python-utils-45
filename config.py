@@ -1,51 +1,80 @@
 import os
-import base64
-from typing import Any, Dict, get_type_hints
+import json
+from typing import Any, Dict, Optional
 
-class CryptoConfig:
-    """Dynamic configuration loader with automatic base64 decoding and environment overrides."""
-    
-    API_URL: str = "https://api.binance.com"
-    RETRY_LIMIT: int = 3
-    ENCRYPTION_KEY_B64: bytes = b"ZGVmYXVsdF9rZXlfMzJfYnl0ZXNfX19fX19fX19fXw=="
-    USE_SANDBOX: bool = False
+DEFAULT_CRYPTO_CONFIG: Dict[str, Any] = {
+    "network": "mainnet",
+    "rpc_nodes": {
+        "mainnet": "https://eth-mainnet.g.alchemy.com/v2/demo",
+        "testnet": "https://eth-goerli.g.alchemy.com/v2/demo",
+    },
+    "trading": {
+        "max_slippage_pct": 0.5,
+        "gas_limit_multiplier": 1.15,
+        "default_gas_price_gwei": 25.0,
+        "auto_approve_tokens": False,
+    },
+    "security": {
+        "min_confirmations": 12,
+        "enforce_checksum": True,
+    }
+}
 
-    def __init__(self, overrides: Dict[str, Any] = None):
-        self._values = overrides or {}
-        self._resolved_cache = {}
+class ConfigLoader:
+    """Dynamic configuration loader with environment overlay and fallback defaults."""
 
-    def __getattr__(self, name: str) -> Any:
-        if name in self._resolved_cache:
-            return self._resolved_cache[name]
+    def __init__(self, config_path: Optional[str] = None):
+        self._config = json.loads(json.dumps(DEFAULT_CRYPTO_CONFIG))
+        if config_path and os.path.exists(config_path):
+            self._load_file(config_path)
+        self._apply_env_overrides()
 
-        annotations = get_type_hints(self.__class__)
-        if name not in annotations and not hasattr(self.__class__, name):
-            raise AttributeError(f"Configuration key '{name}' is not defined")
+    def _load_file(self, path: str) -> None:
+        with open(path, "r", encoding="utf-8") as f:
+            user_cfg = json.load(f)
+            self._merge(self._config, user_cfg)
 
-        expected_type = annotations.get(name, str)
-        val = self._values.get(name, os.environ.get(name, getattr(self.__class__, name, None)))
-        
-        resolved = self._coerce(val, expected_type, name)
-        self._resolved_cache[name] = resolved
-        return resolved
+    def _merge(self, base: Dict[str, Any], update: Dict[str, Any]) -> None:
+        for key, val in update.items():
+            if isinstance(val, dict) and key in base and isinstance(base[key], dict):
+                self._merge(base[key], val)
+            else:
+                base[key] = val
 
-    def _coerce(self, value: Any, target_type: type, name: str) -> Any:
-        if isinstance(value, str):
-            if target_type is bytes and name.endswith("_B64"):
-                return base64.b64decode(value.encode("utf-8"))
-            if target_type is bool:
-                return value.lower() in ("true", "1", "t", "yes")
-        try:
-            return target_type(value)
-        except (ValueError, TypeError):
-            return value
+    def _apply_env_overrides(self) -> None:
+        prefix = "CRYPTO_CFG_"
+        for env_key, value in os.environ.items():
+            if env_key.startswith(prefix):
+                parts = env_key[len(prefix):].lower().split("_")
+                self._set_nested(self._config, parts, value)
+
+    def _set_nested(self, target: Dict[str, Any], path: list, value: str) -> None:
+        curr = target
+        for part in path[:-1]:
+            if part not in curr or not isinstance(curr[part], dict):
+                curr[part] = {}
+            curr = curr[part]
+        leaf = path[-1]
+        if value.lower() in ("true", "false"):
+            curr[leaf] = value.lower() == "true"
+        else:
+            try:
+                curr[leaf] = int(value) if value.isdigit() else float(value)
+            except ValueError:
+                curr[leaf] = value
+
+    def get(self, path: str, default: Any = None) -> Any:
+        keys = path.split(".")
+        curr = self._config
+        for k in keys:
+            if isinstance(curr, dict) and k in curr:
+                curr = curr[k]
+            else:
+                return default
+        return curr
+
+    def __getitem__(self, item: str) -> Any:
+        return self.get(item)
 
     def __repr__(self) -> str:
-        safe_dict = {}
-        for key in get_type_hints(self.__class__):
-            val = getattr(self, key)
-            if "KEY" in key or "SECRET" in key:
-                safe_dict[key] = "***MASKED***"
-            else:
-                safe_dict[key] = val
-        return f"CryptoConfig({safe_dict})"
+        return f"ConfigLoader(network='{self.get('network')}')"
