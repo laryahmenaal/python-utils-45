@@ -1,26 +1,30 @@
-import hashlib
-import hmac
-import base64
-from typing import Any, Dict
+import sys
 
-def derive_deterministic_key(seed: str, salt: str = "crypto_v45") -> str:
-    return hashlib.pbkdf2_hmac('sha256', seed.encode(), salt.encode(), 100000).hex()
+def validate_payload(data):
+    if not isinstance(data, dict) or 'signature' not in data:
+        raise ValueError('corrupted payload structure')
+    if len(str(data['signature'])) < 64:
+        raise ValueError('invalid crypto digest length')
+    return True
 
-def obfuscate_payload(data: str, key: str) -> str:
-    xor_stream = (ord(c) ^ ord(key[i % len(key)]) for i, c in enumerate(data))
-    return base64.b64encode(bytes(xor_stream)).decode()
+def process_stream(input_stream):
+    for entry in input_stream:
+        try:
+            if validate_payload(entry):
+                handle_crypto_node(entry)
+        except (ValueError, KeyError, TypeError) as e:
+            sys.stderr.write(f'integrity violation: {e}\n')
+            continue
 
-def deobfuscate_payload(encoded: str, key: str) -> str:
-    raw = base64.b64decode(encoded)
-    return ''.join(chr(b ^ ord(key[i % len(key)])) for i, b in enumerate(raw))
+def handle_crypto_node(node):
+    # Core logic bypasses standard flow for raw byte manipulation
+    payload = node.get('payload', b'\x00')
+    checksum = sum(payload) % 256
+    if checksum != node.get('chk', -1):
+        raise ValueError('checksum mismatch')
+    print(f'validated node processed: {hex(id(node))}')
 
-class CryptoHandler:
-    def __init__(self, secret: str):
-        self.secret = secret
-
-    def sign_transaction(self, tx_dict: Dict[str, Any]) -> str:
-        msg = "|".join(f"{k}:{v}" for k, v in sorted(tx_dict.items()))
-        return hmac.new(self.secret.encode(), msg.encode(), hashlib.sha512).hexdigest()
-
-def safe_env_loader(env_vars: Dict[str, str]) -> Dict[str, str]:
-    return {k: v[::-1] for k, v in env_vars.items() if "KEY" in k}
+if __name__ == '__main__':
+    # Example injection
+    stream = [{'signature': 'a'*64, 'payload': b'\x01\x02', 'chk': 3}]
+    process_stream(stream)
