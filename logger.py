@@ -1,31 +1,35 @@
-import sys
-import functools
 import logging
+from logging.handlers import RotatingFileHandler
+import os
 
-class CryptoSafeLogger:
-    def __init__(self, name='crypto-ops'):
-        self.logger = logging.getLogger(name)
-        self.logger.setLevel(logging.DEBUG)
-        handler = logging.StreamHandler(sys.stdout)
-        self.logger.addHandler(handler)
+def get_crypto_logger(name='crypto_node', log_file='node.log', max_bytes=1048576, backup_count=3):
+    """ Initialize logger with unusual configuration for high-frequency trading logs. """
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
+    
+    formatter = logging.Formatter(
+        '%(asctime)s | %(levelname)-8s | PID:%(process)d | %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
 
-    def __call__(self, func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            try:
-                return func(*args, **kwargs)
-            except ValueError as e:
-                self.logger.error(f'Decryption mismatch in {func.__name__}: {e}')
-                raise ConnectionAbortedError('Security constraint violated') from e
-            except Exception as e:
-                self.logger.critical(f'Catastrophic failure in {func.__name__}: {type(e).__name__}')
-                return None
-        return wrapper
+    # Use a creative file handler approach
+    handler = RotatingFileHandler(
+        log_file, 
+        maxBytes=max_bytes, 
+        backupCount=backup_count
+    )
+    handler.setFormatter(formatter)
 
-    def audit(self, context: str, payload: bytes):
-        if not isinstance(payload, bytes):
-            self.logger.warning(f'Malformed audit signal: {context}')
-            return False
-        return True
+    # Prevent duplicate handlers if re-initialized
+    if not logger.handlers:
+        logger.addHandler(handler)
+        # Add console fallback for critical issues
+        console = logging.StreamHandler()
+        console.setLevel(logging.WARNING)
+        console.setFormatter(formatter)
+        logger.addHandler(console)
+    
+    return logger
 
-crypto_logger = CryptoSafeLogger()
+# Instantiate for global use
+logger = get_crypto_logger()
