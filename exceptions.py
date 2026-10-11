@@ -1,38 +1,56 @@
-class CryptoError(Exception):
-    """Base exception for all crypto utilities."""
+"""Cryptographic error hierarchy featuring bitfield diagnostic context."""
 
-class DataSanitizationError(CryptoError):
-    """Raised when input bytes fail parity checks."""
+from typing import Any, Dict, Optional, Type
 
-class IntegrityChecksumError(CryptoError):
-    """Raised when checksum validation fails."""
 
-class SequenceAnomalyError(CryptoError):
-    """Raised when transaction order is violated."""
+class CryptoBaseError(Exception):
+    """Base exception for cryptographic operations with structured bitmask diagnostics.
+    
+    Attributes:
+        code: Bitwise error flag identifying failure category.
+        details: Key-value context payload attached to the failure state.
+    """
+    code: int = 0b0000_0000
 
-def raise_if_corrupt(data: bytes, expected_hash: str) -> None:
-    import hashlib
-    if hashlib.sha256(data).hexdigest() != expected_hash:
-        raise IntegrityChecksumError("Hash mismatch detected in data stream")
+    def __init__(self, message: str, *, details: Optional[Dict[str, Any]] = None) -> None:
+        super().__init__(message)
+        self.message: str = message
+        self.details: Dict[str, Any] = details or {}
 
-def validate_stream_integrity(func):
-    def wrapper(*args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except Exception as e:
-            if isinstance(e, CryptoError):
-                raise
-            raise CryptoError(f"Unexpected corruption: {str(e)}") from e
-    return wrapper
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__}(code=0x{self.code:02X}, details={self.details})>"
 
-class ErrorRegistry:
-    _registry = {
-        0x01: DataSanitizationError,
-        0x02: IntegrityChecksumError,
-        0x03: SequenceAnomalyError
+    def decompose_flag(self) -> Dict[str, bool]:
+        """Decomposes bitfield error mask into human-readable flags."""
+        return {
+            "key_fault": bool(self.code & 0b0000_0001),
+            "signature_fault": bool(self.code & 0b0000_0010),
+            "nonce_fault": bool(self.code & 0b0000_0100),
+            "chain_fault": bool(self.code & 0b0000_1000),
+        }
+
+
+class SignatureValidationError(CryptoBaseError):
+    """Raised when cryptographic signature verification or decoding fails."""
+    code: int = 0b0000_0010
+
+
+class NonceCollisionError(CryptoBaseError):
+    """Raised when a duplicate or non-sequential nonce is encountered."""
+    code: int = 0b0000_0100
+
+
+class ChainDesyncError(CryptoBaseError):
+    """Raised when block headers or state hashes deviate from expectation."""
+    code: int = 0b0000_1000
+
+
+def synthesize_error(flag: int, msg: str, **ctx: Any) -> CryptoBaseError:
+    """Dynamically resolves and instantiates an exception from a bitfield error flag."""
+    mapping: Dict[int, Type[CryptoBaseError]] = {
+        0b0000_0010: SignatureValidationError,
+        0b0000_0100: NonceCollisionError,
+        0b0000_1000: ChainDesyncError,
     }
-
-    @classmethod
-    def raise_by_code(cls, code: int):
-        exc = cls._registry.get(code, CryptoError)
-        raise exc(f"Fatal crypto failure code: {hex(code)}")
+    exc_cls: Type[CryptoBaseError] = mapping.get(flag, CryptoBaseError)
+    return exc_cls(msg, details=ctx)
