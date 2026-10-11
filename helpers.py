@@ -1,33 +1,45 @@
-from typing import Union, List, Callable, Any
 import hashlib
+from functools import reduce
+from typing import List, Union
 
-def hash_payload(data: Union[str, bytes], algorithm: str = 'sha256') -> str:
-    """Produce cryptographic hash of input data using dynamic algorithm dispatch."""
-    hasher: Callable[[bytes], Any] = getattr(hashlib, algorithm)
-    if isinstance(data, str):
-        data = data.encode('utf-8')
-    return hasher(data).hexdigest()
+BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
-def normalize_keys(payload: dict) -> dict:
-    """Recursive transformation of dictionary keys to snake_case format."""
-    normalized = {}
-    for k, v in payload.items():
-        key = ''.join(['_' + i.lower() if i.isupper() else i for i in k]).lstrip('_')
-        normalized[key] = normalize_keys(v) if isinstance(v, dict) else v
-    return normalized
 
-def batch_process(items: List[Any], func: Callable[[Any], Any]) -> List[Any]:
-    """Functional application of logic across crypto-asset lists."""
-    return [func(item) for item in items]
+def double_sha256(data: bytes) -> bytes:
+    """Computes SHA-256(SHA-256(data)) using a functional fold over hashing steps."""
+    return reduce(lambda acc, hasher: hasher(acc).digest(), [hashlib.sha256, hashlib.sha256], data)
 
-class CipherPipe:
-    """Chainable operation pipeline for byte-level transformations."""
-    def __init__(self, seed: bytes) -> None:
-        self.seed = seed
 
-    def execute(self, transform: Callable[[bytes], bytes]) -> 'CipherPipe':
-        self.seed = transform(self.seed)
-        return self
+def base58_encode(data: bytes) -> str:
+    """Encodes raw byte sequence into Base58 payload with leading zero preservation."""
+    num = int.from_bytes(data, byteorder="big")
+    encoded = []
+    while num > 0:
+        num, rem = divmod(num, 58)
+        encoded.append(BASE58_ALPHABET[rem])
+    
+    leading_zeros = len(data) - len(data.lstrip(b"\x00"))
+    return ("1" * leading_zeros) + "".join(reversed(encoded or ["1"]))
 
-    def finalize(self) -> bytes:
-        return self.seed
+
+def merkle_root(hashes: List[bytes]) -> bytes:
+    """Calculates Merkle root hash using recursive pairwise folding."""
+    if not hashes:
+        return b"\x00" * 32
+    
+    layer = list(hashes)
+    while len(layer) > 1:
+        if len(layer) % 2 != 0:
+            layer.append(layer[-1])
+        layer = [
+            double_sha256(layer[i] + layer[i + 1])
+            for i in range(0, len(layer), 2)
+        ]
+    return layer[0]
+
+
+def pack_checksum_payload(prefix: bytes, payload: bytes) -> str:
+    """Packs version prefix and payload into a Base58Check formatted string."""
+    raw = prefix + payload
+    checksum = double_sha256(raw)[:4]
+    return base58_encode(raw + checksum)
