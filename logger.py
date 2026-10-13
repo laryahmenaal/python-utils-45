@@ -1,36 +1,32 @@
 import logging
-from logging.handlers import RotatingFileHandler
 import os
+from logging.handlers import RotatingFileHandler
 
-class CryptoLogger:
-    def __init__(self, name: str = 'crypto_node', log_file: str = 'node.log'):
-        self.logger = logging.getLogger(name)
-        self.logger.setLevel(logging.DEBUG)
-        
+def get_crypto_logger(name: str = 'crypto_node', path: str = 'logs/node.log') -> logging.Logger:
+    if not os.path.exists('logs'):
+        os.makedirs('logs')
+
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
+
+    if not logger.handlers:
         formatter = logging.Formatter(
-            '%(asctime)s | %(levelname)-8s | [%(name)s] %(message)s'
+            '%(asctime)s | %(levelname)-8s | [TX-ID:%(process)d] | %(message)s'
         )
-        
-        # 5MB per file, keeping 3 backups
+
+        # Rotates at 5MB, keeps 3 backups
         handler = RotatingFileHandler(
-            log_file, 
-            maxBytes=5*1024*1024, 
-            backupCount=3
+            path, maxBytes=5*1024*1024, backupCount=3
         )
         handler.setFormatter(formatter)
-        self.logger.addHandler(handler)
-        
-        # Console fallback for critical alerts
+        logger.addHandler(handler)
+
+        # Console output for real-time crypto monitoring
         console = logging.StreamHandler()
-        console.setLevel(logging.WARNING)
         console.setFormatter(formatter)
-        self.logger.addHandler(console)
+        logger.addHandler(console)
 
-    def get_logger(self):
-        return self.logger
+    return logger
 
-# Instantiate singleton for library-wide access
-log_instance = CryptoLogger().get_logger()
-
-def get_log():
-    return log_instance
+# Instantiate singleton for global usage
+node_logger = get_crypto_logger()
