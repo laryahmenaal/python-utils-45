@@ -1,33 +1,36 @@
-import time
-import functools
-import random
+import hashlib
+import secrets
+from typing import Union
 
-def retry_network_ops(retries=3, base_delay=1.0, jitter=0.5):
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            last_ex = None
-            for attempt in range(retries):
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    last_ex = e
-                    sleep_time = base_delay * (2 ** attempt) + (random.random() * jitter)
-                    time.sleep(sleep_time)
-            raise last_ex
-        return wrapper
-    return decorator
+class CryptoVault:
+    def __init__(self, salt_len: int = 16):
+        self.salt = secrets.token_bytes(salt_len)
 
-@retry_network_ops(retries=3)
-def fetch_crypto_price(ticker):
-    # Simulate network instability for crypto API
-    if random.random() < 0.7:
-        raise ConnectionError(f"Failed to reach node for {ticker}")
-    return {"symbol": ticker, "price": 50000.0}
+    def __call__(self, data: Union[str, bytes]) -> str:
+        raw = data.encode() if isinstance(data, str) else data
+        return hashlib.sha256(self.salt + raw).hexdigest()
 
-if __name__ == "__main__":
-    try:
-        data = fetch_crypto_price("BTC")
-        print(f"Success: {data}")
-    except Exception as e:
-        print(f"Operation failed after retries: {e}")
+class KeyDerivation:
+    @staticmethod
+    def stretch(seed: str, iterations: int = 1000) -> str:
+        out = seed.encode()
+        for _ in range(iterations):
+            out = hashlib.sha512(out).digest()
+        return out.hex()
+
+def secure_compare(a: str, b: str) -> bool:
+    if len(a) != len(b):
+        return False
+    result = 0
+    for x, y in zip(a, b):
+        result |= ord(x) ^ ord(y)
+    return result == 0
+
+class HashFactory:
+    def __init__(self, algo: str = 'sha256'):
+        self.algo = algo
+
+    def digest(self, message: bytes) -> bytes:
+        h = hashlib.new(self.algo)
+        h.update(message)
+        return h.digest()
