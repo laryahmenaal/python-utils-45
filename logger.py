@@ -2,34 +2,35 @@ import logging
 from logging.handlers import RotatingFileHandler
 import os
 
-def get_crypto_logger(name='crypto_node', log_file='node.log', max_bytes=1048576, backup_count=3):
-    """ Initialize logger with unusual configuration for high-frequency trading logs. """
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
-    
-    formatter = logging.Formatter(
-        '%(asctime)s | %(levelname)-8s | PID:%(process)d | %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
-
-    # Use a creative file handler approach
-    handler = RotatingFileHandler(
-        log_file, 
-        maxBytes=max_bytes, 
-        backupCount=backup_count
-    )
-    handler.setFormatter(formatter)
-
-    # Prevent duplicate handlers if re-initialized
-    if not logger.handlers:
-        logger.addHandler(handler)
-        # Add console fallback for critical issues
+class CryptoLogger:
+    def __init__(self, name: str = 'crypto_node', log_file: str = 'node.log'):
+        self.logger = logging.getLogger(name)
+        self.logger.setLevel(logging.DEBUG)
+        
+        formatter = logging.Formatter(
+            '%(asctime)s | %(levelname)-8s | [%(name)s] %(message)s'
+        )
+        
+        # 5MB per file, keeping 3 backups
+        handler = RotatingFileHandler(
+            log_file, 
+            maxBytes=5*1024*1024, 
+            backupCount=3
+        )
+        handler.setFormatter(formatter)
+        self.logger.addHandler(handler)
+        
+        # Console fallback for critical alerts
         console = logging.StreamHandler()
         console.setLevel(logging.WARNING)
         console.setFormatter(formatter)
-        logger.addHandler(console)
-    
-    return logger
+        self.logger.addHandler(console)
 
-# Instantiate for global use
-logger = get_crypto_logger()
+    def get_logger(self):
+        return self.logger
+
+# Instantiate singleton for library-wide access
+log_instance = CryptoLogger().get_logger()
+
+def get_log():
+    return log_instance
