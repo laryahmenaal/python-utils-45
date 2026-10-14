@@ -1,23 +1,23 @@
 # python-utils-45
 
-A high-performance Python toolkit designed for seamless interaction with decentralized finance protocols and blockchain data streams. It streamlines crypto-asset monitoring and execution tasks for professional algorithmic traders and developers.
+A lightweight, high-performance toolkit for crypto developers designed to streamline blockchain data ingestion and wallet management. This library simplifies complex cryptographic operations and provides robust utilities for interacting with multi-chain environments.
 
 ## Features
 
-*   **Async WebSocket Streamer:** Real-time, low-latency price tracking for major CEX/DEX pairs with auto-reconnection logic.
-*   **Encrypted Key Manager:** Secure handling of API secrets and private keys using local AES-256 environment variable encryption.
-*   **Gas Estimation Engine:** Predictive gas fee calculation for EVM-compatible chains to optimize transaction throughput and cost.
-*   **Portfolio Snapshotter:** Aggregate token balance reporting across multi-chain wallets in a standardized JSON format.
+*   **Address Validation Engine:** Built-in regex and checksum verification for BTC, ETH, and SOL wallet formats.
+*   **Asynchronous Price Aggregator:** Efficient multi-source fetcher for real-time asset pricing with built-in rate-limiting and cache support.
+*   **Transaction Signing Helpers:** Simplified interface for constructing and broadcasting raw transactions without manual hex-encoding.
+*   **Key Security Utilities:** Secure mnemonic generation and derivation path management compliant with BIP-39 and BIP-44 standards.
 
 ## Installation
 
-Ensure you have Python 3.9+ installed. Install the package via pip:
+Install the package directly from PyPI:
 
 ```bash
 pip install python-utils-45
 ```
 
-For local development or custom builds:
+Alternatively, for the latest development build:
 
 ```bash
 git clone https://github.com/Developer/python-utils-45.git
@@ -27,18 +27,25 @@ pip install -r requirements.txt
 
 ## Usage
 
-Below is a quick example of how to initialize the connection and fetch the current ticker price for ETH/USDT:
+Quickly validate an Ethereum address and fetch its current balance through the integrated module:
 
 ```python
-from utils_45.client import CryptoClient
+from pyutils45 import WalletManager, PriceEngine
 
-# Initialize client with your API credentials
-client = CryptoClient(api_key="your_api_key", secret="your_secret")
+# Validate an address
+validator = WalletManager(network='ethereum')
+if validator.is_valid("0x71C7656..."):
+    print("Address verified.")
 
-# Fetch latest price
-price_data = client.get_ticker("ETH/USDT")
-print(f"Current Price: {price_data['last']}")
+# Fetch real-time market data
+engine = PriceEngine()
+price = engine.get_latest_price("BTC", "USD")
+print(f"Current BTC Price: ${price}")
 ```
+
+## Contributing
+
+We welcome contributions from the crypto-engineering community. Please ensure all pull requests pass the existing test suite and adhere to PEP 8 standards.
 
 ## License
 
