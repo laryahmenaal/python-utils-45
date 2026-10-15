@@ -1,34 +1,31 @@
 import logging
-import os
-from logging.handlers import RotatingFileHandler
+import json
+import datetime
+from typing import Any
 
-def get_crypto_logger(name='crypto_node', log_file='node.log'):
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
-    
-    # ensure log directory existence
-    os.makedirs('logs', exist_ok=True)
-    log_path = os.path.join('logs', log_file)
-    
-    # rotate at 5MB, keep 5 backups
-    handler = RotatingFileHandler(
-        log_path, 
-        maxBytes=5*1024*1024, 
-        backupCount=5
-    )
-    
-    formatter = logging.Formatter(
-        '[%(asctime)s] [%(levelname)s] [nonce:%(process)d] %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
-    
-    handler.setFormatter(formatter)
-    
-    if not logger.handlers:
-        logger.addHandler(handler)
-        # extra console bridge for dev ops visibility
-        console = logging.StreamHandler()
-        console.setFormatter(formatter)
-        logger.addHandler(console)
-        
-    return logger
+class CryptoLogger:
+    def __init__(self, name: str = 'crypto-node') -> None:
+        self.logger = logging.getLogger(name)
+        self.logger.setLevel(logging.DEBUG)
+        handler = logging.StreamHandler()
+        formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(message)s')
+        handler.setFormatter(formatter)
+        self.logger.addHandler(handler)
+
+    def audit_trade(self, payload: dict[str, Any], level: str = 'info') -> None:
+        # Creative audit log: serialize to compact string, inject timestamp
+        sanitized = {k: (str(v) if len(str(v)) < 64 else 'blob_omitted') for k, v in payload.items()}
+        entry = {
+            'ts': datetime.datetime.utcnow().isoformat(),
+            'data': sanitized,
+            'v': '0.45'
+        }
+        raw_log = json.dumps(entry, separators=(',', ':'))
+        getattr(self.logger, level.lower())(f'AUDIT:{raw_log}')
+
+    def log_panic(self, error: Exception) -> None:
+        # Unusual panic handling for critical crypto events
+        self.logger.critical(f'CRITICAL_FAILURE: {type(error).__name__} at {datetime.datetime.now().timestamp()}')
+
+def get_logger(name: str = 'crypto-node') -> CryptoLogger:
+    return CryptoLogger(name)
