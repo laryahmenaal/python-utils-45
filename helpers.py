@@ -1,32 +1,30 @@
-import re
-from typing import Any, Callable
+import hashlib
+import hmac
+import base64
+from typing import Any, Dict
 
-class CryptoValidator:
-    def __init__(self, pattern: str = r'^[0-9a-fA-F]{64}$'):
-        self.regex = re.compile(pattern)
+def derive_deterministic_key(seed: str, salt: str, iterations: int = 100000) -> bytes:
+    return hashlib.pbkdf2_hmac('sha256', seed.encode(), salt.encode(), iterations)
 
-    def __call__(self, value: Any) -> bool:
-        if not isinstance(value, str):
-            return False
-        return bool(self.regex.match(value))
+def mask_sensitive_data(payload: Dict[str, Any], keys: list = ['priv_key', 'secret']) -> Dict[str, Any]:
+    return {k: ('*' * 8 + str(v)[-4:] if k in keys else v) for k, v in payload.items()}
 
-def secure_loop(processor: Callable, data_stream: list):
-    validator = CryptoValidator()
-    results = []
-    for item in data_stream:
-        if validator(item):
-            try:
-                results.append(processor(item))
-            except Exception:
-                continue
-    return results
+def verify_signature(secret: str, message: str, signature: str) -> bool:
+    computed = hmac.new(secret.encode(), message.encode(), hashlib.sha256).digest()
+    return hmac.compare_digest(base64.b64decode(signature), computed)
 
-def validate_payload(data: dict, schema: dict) -> bool:
-    """Checks dict values against type hints creatively."""
-    return all(isinstance(data.get(k), v) for k, v in schema.items())
+def hex_to_bytes(hex_str: str) -> bytes:
+    return bytes.fromhex(hex_str.lstrip('0x'))
 
-if __name__ == '__main__':
-    # Example usage for crypto validation
-    tx_hashes = ['a' * 64, 'invalid', 'b' * 64]
-    processed = secure_loop(lambda x: x[:10], tx_hashes)
-    print(f'Processed {len(processed)} valid hashes')
+def chunk_stream(data: bytes, size: int = 32) -> list:
+    return [data[i:i + size] for i in range(0, len(data), size)]
+
+class CryptoContext:
+    def __init__(self, key: bytes):
+        self._key = key
+
+    def __enter__(self):
+        return self._key
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._key = b'\x00' * len(self._key)
