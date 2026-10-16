@@ -3,30 +3,34 @@ import json
 from typing import Any, Dict
 
 class ConfigLoader:
-    def __init__(self, defaults: Dict[str, Any], env_prefix: str = "CRYPTO_"):
-        self._config = defaults.copy()
-        self._env_prefix = env_prefix
+    """Dynamic configuration loader using a layered override pattern."""
+    def __init__(self, defaults: Dict[str, Any]):
+        self._config = defaults
 
-    def load_from_file(self, path: str) -> None:
-        if os.path.exists(path):
-            with open(path, "r") as f:
-                self._config.update(json.load(f))
-        self._apply_env_overrides()
-
-    def _apply_env_overrides(self) -> None:
-        for key in self._config.keys():
-            env_val = os.environ.get(f"{self._env_prefix}{key.upper()}")
+    def load_from_env(self, prefix: str = "CRYPTO_") -> None:
+        for key in self._config:
+            env_val = os.getenv(f"{prefix}{key.upper()}")
             if env_val is not None:
-                try:
-                    self._config[key] = json.loads(env_val)
-                except json.JSONDecodeError:
-                    self._config[key] = env_val
+                self._config[key] = self._parse_val(env_val)
 
-    def get(self, key: str, default: Any = None) -> Any:
-        return self._config.get(key, default)
+    def _parse_val(self, val: str) -> Any:
+        if val.lower() in ('true', 'false'): return val.lower() == 'true'
+        try: return int(val)
+        except ValueError: return val
 
     def __getitem__(self, key: str) -> Any:
-        return self._config[key]
+        return self._config.get(key)
 
-    def __repr__(self) -> str:
-        return f"ConfigLoader(keys={list(self._config.keys())})"
+    def patch(self, overrides: Dict[str, Any]) -> None:
+        self._config.update(overrides)
+
+def get_crypto_config() -> ConfigLoader:
+    defaults = {
+        "node_url": "wss://mainnet.infura.io/ws/v3/",
+        "timeout": 30,
+        "verify_ssl": True,
+        "retry_limit": 3
+    }
+    loader = ConfigLoader(defaults)
+    loader.load_from_env()
+    return loader
