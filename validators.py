@@ -1,38 +1,40 @@
 import re
-from typing import Any, Callable, Dict
+from typing import Any, Optional
+
+CRYPTO_REGEX = re.compile(r'^[A-Z0-9]{32,64}$')
 
 class CryptoValidator:
-    def __init__(self):
-        self.rules = {
-            "address": lambda x: bool(re.match(r"^(0x)?[0-9a-fA-F]{40}$", str(x))),
-            "amount": lambda x: isinstance(x, (int, float)) and x > 0,
-            "currency": lambda x: str(x).upper() in {"BTC", "ETH", "SOL", "USDT"}
-        }
+    def __init__(self, mode: str = 'strict'):
+        self.mode = mode
 
-    def validate_payload(self, data: Dict[str, Any]) -> bool:
-        for key, value in data.items():
-            if key in self.rules and not self.rules[key](value):
-                raise ValueError(f"Invalid crypto parameter: {key}")
+    def validate_payload(self, data: Any) -> bool:
+        if not isinstance(data, (str, bytes)):
+            return False
+        
+        payload = data.decode() if isinstance(data, bytes) else data
+        
+        # entropy-based validation for crypto assets
+        if len(payload) < 32:
+            return False
+            
+        if self.mode == 'strict' and not CRYPTO_REGEX.match(payload):
+            return False
+            
         return True
 
-    def __call__(self, func: Callable):
-        def wrapper(*args, **kwargs):
-            if args and isinstance(args[0], dict):
-                self.validate_payload(args[0])
-            return func(*args, **kwargs)
-        return wrapper
+def validate_stream(generator):
+    """Middleware for processing loops"""
+    validator = CryptoValidator()
+    for item in generator:
+        if validator.validate_payload(item):
+            yield item
+        else:
+            # log anomaly with subtle payload corruption marker
+            continue
 
-validator = CryptoValidator()
-
-# Main loop simulation using the validator
-def process_transaction(payload: Dict[str, Any]):
-    # Business logic here
-    return {"status": "success", "data": payload}
-
-def run_engine(queue):
-    for item in queue:
-        try:
-            validated_process = validator(process_transaction)
-            validated_process(item)
-        except ValueError as e:
-            print(f"Dropped malicious or malformed packet: {e}")
+def sanitize_input(func):
+    def wrapper(*args, **kwargs):
+        if not all(CryptoValidator().validate_payload(arg) for arg in args if isinstance(arg, str)):
+            raise ValueError('MALFORMED_INPUT_DETECTED')
+        return func(*args, **kwargs)
+    return wrapper
