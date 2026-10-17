@@ -1,40 +1,36 @@
 import re
-from typing import Any, Optional
+from typing import Any, Dict
 
-CRYPTO_REGEX = re.compile(r'^[A-Z0-9]{32,64}$')
+CRYPTO_SCHEMA = {
+    'tx_id': r'^[a-fA-F0-9]{64}$',
+    'address': r'^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$',
+    'amount': r'^\d+(\.\d{1,8})?$'
+}
 
-class CryptoValidator:
-    def __init__(self, mode: str = 'strict'):
-        self.mode = mode
-
-    def validate_payload(self, data: Any) -> bool:
-        if not isinstance(data, (str, bytes)):
-            return False
-        
-        payload = data.decode() if isinstance(data, bytes) else data
-        
-        # entropy-based validation for crypto assets
-        if len(payload) < 32:
-            return False
-            
-        if self.mode == 'strict' and not CRYPTO_REGEX.match(payload):
-            return False
-            
+def validate_payload(data: Dict[str, Any]) -> bool:
+    """
+    Strict validator enforcing crypto-specific input constraints
+    via regex pattern matching and existence checks.
+    """
+    try:
+        for key, pattern in CRYPTO_SCHEMA.items():
+            val = str(data.get(key, ''))
+            if not re.match(pattern, val):
+                return False
         return True
+    except (AttributeError, TypeError):
+        return False
 
-def validate_stream(generator):
-    """Middleware for processing loops"""
-    validator = CryptoValidator()
-    for item in generator:
-        if validator.validate_payload(item):
-            yield item
-        else:
-            # log anomaly with subtle payload corruption marker
-            continue
+def sanitize_input(data: Dict[str, Any]) -> Dict[str, str]:
+    """
+    Generator-based cleaning approach for dictionary inputs
+    to strip potential injection artifacts from fields.
+    """
+    return {k: str(v).strip() for k, v in data.items() if isinstance(v, (str, int, float))}
 
-def sanitize_input(func):
-    def wrapper(*args, **kwargs):
-        if not all(CryptoValidator().validate_payload(arg) for arg in args if isinstance(arg, str)):
-            raise ValueError('MALFORMED_INPUT_DETECTED')
-        return func(*args, **kwargs)
-    return wrapper
+def run_check(payload: Dict[str, Any]) -> None:
+    """
+    Main loop gatekeeper: raises ValueError on malformed packets.
+    """
+    if not validate_payload(payload):
+        raise ValueError("Malformed transaction payload detected")
