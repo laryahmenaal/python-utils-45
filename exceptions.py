@@ -1,56 +1,53 @@
-"""Cryptographic error hierarchy featuring bitfield diagnostic context."""
+import json
+import time
+from typing import Any, Dict, Optional
 
-from typing import Any, Dict, Optional, Type
 
+class CryptoBaseException(Exception):
+    """Base exception for crypto data utilities with dynamic metadata tracking."""
 
-class CryptoBaseError(Exception):
-    """Base exception for cryptographic operations with structured bitmask diagnostics.
-    
-    Attributes:
-        code: Bitwise error flag identifying failure category.
-        details: Key-value context payload attached to the failure state.
-    """
-    code: int = 0b0000_0000
-
-    def __init__(self, message: str, *, details: Optional[Dict[str, Any]] = None) -> None:
+    def __init__(self, message: str, payload: Optional[Any] = None, error_code: int = 5000):
         super().__init__(message)
-        self.message: str = message
-        self.details: Dict[str, Any] = details or {}
+        self.message = message
+        self.payload = payload
+        self.error_code = error_code
+        self.timestamp = time.time()
 
     def __repr__(self) -> str:
-        return f"<{self.__class__.__name__}(code=0x{self.code:02X}, details={self.details})>"
+        return f"<{self.__class__.__name__}(code={self.error_code}, msg='{self.message}')>"
 
-    def decompose_flag(self) -> Dict[str, bool]:
-        """Decomposes bitfield error mask into human-readable flags."""
+    def to_dict(self) -> Dict[str, Any]:
         return {
-            "key_fault": bool(self.code & 0b0000_0001),
-            "signature_fault": bool(self.code & 0b0000_0010),
-            "nonce_fault": bool(self.code & 0b0000_0100),
-            "chain_fault": bool(self.code & 0b0000_1000),
+            "error": self.__class__.__name__,
+            "code": self.error_code,
+            "message": self.message,
+            "payload": str(self.payload) if self.payload else None,
+            "timestamp": self.timestamp,
         }
 
-
-class SignatureValidationError(CryptoBaseError):
-    """Raised when cryptographic signature verification or decoding fails."""
-    code: int = 0b0000_0010
+    def to_json(self) -> str:
+        return json.dumps(self.to_dict())
 
 
-class NonceCollisionError(CryptoBaseError):
-    """Raised when a duplicate or non-sequential nonce is encountered."""
-    code: int = 0b0000_0100
+class OrderBookCorruptedException(CryptoBaseException):
+    """Raised when order book depth contains invalid or non-monotonic prices."""
+
+    def __init__(self, symbol: str, bad_depth: Any):
+        msg = f"Corrupted order book structure detected for market symbol: {symbol}"
+        super().__init__(msg, payload=bad_depth, error_code=5001)
 
 
-class ChainDesyncError(CryptoBaseError):
-    """Raised when block headers or state hashes deviate from expectation."""
-    code: int = 0b0000_1000
+class InvalidTickerPayloadException(CryptoBaseException):
+    """Raised when ticker payload fails schema sanity or price delta checks."""
+
+    def __init__(self, ticker_data: Dict[str, Any], reason: str):
+        msg = f"Invalid ticker schema or value delta: {reason}"
+        super().__init__(msg, payload=ticker_data, error_code=5002)
 
 
-def synthesize_error(flag: int, msg: str, **ctx: Any) -> CryptoBaseError:
-    """Dynamically resolves and instantiates an exception from a bitfield error flag."""
-    mapping: Dict[int, Type[CryptoBaseError]] = {
-        0b0000_0010: SignatureValidationError,
-        0b0000_0100: NonceCollisionError,
-        0b0000_1000: ChainDesyncError,
-    }
-    exc_cls: Type[CryptoBaseError] = mapping.get(flag, CryptoBaseError)
-    return exc_cls(msg, details=ctx)
+class RateLimitExceededException(CryptoBaseException):
+    """Raised when exchange request limit budget is exhausted."""
+
+    def __init__(self, retry_after: float):
+        msg = f"API rate limit reached, cool-down required for {retry_after}s"
+        super().__init__(msg, payload={"retry_after": retry_after}, error_code=4290)
