@@ -1,40 +1,32 @@
-import secrets
-from typing import Final, Dict
+import enum
+from typing import Final
 
-# Cryptographic constants and helper structures
-BYTES_IN_SHA256: Final[int] = 32
-DEFAULT_NONCE_SIZE: Final[int] = 16
+class CryptoConstants(enum.Enum):
+    HASH_ALGO: Final[str] = 'sha256'
+    CURVE_NAME: Final[str] = 'secp256k1'
+    KEY_SIZE_BYTES: Final[int] = 32
+    NONCE_SIZE: Final[int] = 12
+    PBKDF2_ITERATIONS: Final[int] = 600000
 
-# Map of hex prefixes to network identifiers
-NET_MAP: Final[Dict[str, str]] = {
-    '0x00': 'mainnet',
-    '0x6f': 'testnet',
-    '0x3c': 'regtest'
-}
+class NetworkFlags(enum.IntFlag):
+    MAINNET = 0x01
+    TESTNET = 0x02
+    REGTEST = 0x04
+    STAGING = 0x08
 
-def generate_entropy(n: int = DEFAULT_NONCE_SIZE) -> bytes:
-    """Produce cryptographically secure random bytes"""
-    return secrets.token_bytes(n)
+def get_chain_params(flag: NetworkFlags) -> dict:
+    mapping = {
+        NetworkFlags.MAINNET: {'prefix': 0x00, 'port': 8333},
+        NetworkFlags.TESTNET: {'prefix': 0x6F, 'port': 18333},
+        NetworkFlags.REGTEST: {'prefix': 0x6F, 'port': 18444}
+    }
+    return mapping.get(flag, {})
 
-def hex_to_int(hex_str: str) -> int:
-    """Fast conversion for hex strings to int"""
-    return int(hex_str.lstrip('0x'), 16)
+ENCODING: Final[str] = 'utf-8'
+VERSION_TAG: Final[str] = 'v0.4.5-crypto'
 
-def is_valid_hex(s: str) -> bool:
-    """Verify hex format with aggressive validation"""
-    try:
-        int(s, 16)
-        return True
-    except ValueError:
-        return False
-
-# Collection of standard crypto-related character sets
-CHARSET_BASE58: Final[str] = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
-
-class Constants:
-    """Namespace for crypto protocol parameters"""
-    def __init__(self):
-        self.version = '0.4.5'
-        self.precision = 8
-
-GLOBAL_CONFIG = Constants()
+class StatusCodes:
+    SUCCESS: Final[int] = 0
+    ERR_KEY_INVALID: Final[int] = 101
+    ERR_SIG_FAILED: Final[int] = 102
+    ERR_IO_TIMEOUT: Final[int] = 103
