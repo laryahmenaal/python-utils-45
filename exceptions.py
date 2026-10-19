@@ -1,31 +1,25 @@
+from typing import Optional, Any
+
 class CryptoBaseError(Exception):
-    """Base exception for crypto operations."""
+    """Base exception for all crypto-related module operations."""
+    def __init__(self, message: str, payload: Optional[Any] = None) -> None:
+        super().__init__(message)
+        self.payload: Optional[Any] = payload
 
-class DecryptionFailure(CryptoBaseError):
-    """Raised when key mismatch occurs."""
+class InvalidSignatureError(CryptoBaseError):
+    """Raised when cryptographic signature verification fails."""
+    pass
 
-class IntegrityError(CryptoBaseError):
-    """Raised when checksum validation fails."""
+class KeyDerivationError(CryptoBaseError):
+    """Raised during failure of KDF processes."""
+    pass
 
-class EntropyExhaustedError(CryptoBaseError):
-    """Raised when CSPRNG fails."""
+class BufferOverflowSecurityError(CryptoBaseError):
+    """Explicit alert for memory-based vulnerability attempts."""
+    def __init__(self, message: str = "Critical memory boundary breach") -> None:
+        super().__init__(message, payload={"action": "immediate_purge"})
 
-class CryptoExceptionHandler:
-    def __init__(self):
-        self.registry = {
-            ValueError: "Data encoding issue",
-            TypeError: "Type mismatch in cipher",
-            RuntimeError: "Hardware security module fault"
-        }
-
-    def wrap_error(self, e: Exception):
-        msg = self.registry.get(type(e), "Unknown crypto fault")
-        return CryptoBaseError(f"[{msg}] -> {str(e)}")
-
-def handle_critical_failure(e: Exception):
-    """Unorthodox exit strategy for crypto edge cases."""
-    import sys
-    sys.stderr.write(f"[FATAL] {type(e).__name__}: {e}\n")
-    if isinstance(e, EntropyExhaustedError):
-        sys.exit(0xDEAD)
-    raise e
+def raise_if_insecure(condition: bool, context: str) -> None:
+    """Conditional check forcing exceptions for invalid crypto states."""
+    if condition:
+        raise BufferOverflowSecurityError(f"Security failure: {context}")
