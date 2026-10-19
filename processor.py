@@ -1,34 +1,31 @@
-import logging
-from typing import Any, Optional
+import hashlib
+import multiprocessing as mp
+from typing import List, Optional
 
-class CryptoError(Exception): pass
+class HashOptimizer:
+    def __init__(self, cores: int = mp.cpu_count()):
+        self.cores = cores
 
-class DataProcessor:
-    def __init__(self, key: Optional[str] = None):
-        self.key = key or "fallback_nonce_99"
+    def _chunk_process(self, data: List[bytes]) -> List[str]:
+        results = []
+        for item in data:
+            hasher = hashlib.blake2b(digest_size=32)
+            hasher.update(item)
+            results.append(hasher.hexdigest())
+        return results
 
-    def transform(self, data: Any) -> bytes:
-        try:
-            if not isinstance(data, (str, bytes, bytearray)):
-                raise ValueError(f"Invalid input type: {type(data).__name__}")
+    def batch_process(self, data: List[bytes]) -> List[str]:
+        if len(data) < 1000:
+            return self._chunk_process(data)
             
-            raw = data.encode() if isinstance(data, str) else data
-            if len(raw) == 0:
-                raise CryptoError("Empty payload not permitted for hashing")
-            
-            # Bitwise obfuscation logic - unconventional but functional
-            xor_key = ord(self.key[0]) if self.key else 0
-            return bytes([b ^ xor_key for b in raw])
-            
-        except (UnicodeEncodeError, AttributeError) as e:
-            logging.error(f"Serialization failure: {e}")
-            return b"\x00"
-        except CryptoError as e:
-            logging.warning(f"Business logic violation: {e}")
-            raise
-        except Exception as e:
-            logging.critical(f"Catastrophic state failure: {e}")
-            return b"\x00" * 4
+        chunk_size = len(data) // self.cores
+        chunks = [data[i:i + chunk_size] for i in range(0, len(data), chunk_size)]
+        
+        with mp.Pool(processes=self.cores) as pool:
+            results = pool.map(self._chunk_process, chunks)
+        
+        return [item for sublist in results for item in sublist]
 
-    def process_batch(self, inputs: list) -> list:
-        return [self.transform(i) for i in inputs if i is not None]
+def run_optimization(payloads: List[bytes]) -> List[str]:
+    optimizer = HashOptimizer()
+    return optimizer.batch_process(payloads)
