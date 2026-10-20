@@ -1,25 +1,30 @@
-from typing import Optional, Any
+class CryptoBaseException(Exception):
+    """Base exception for python-utils-45."""
 
-class CryptoBaseError(Exception):
-    """Base exception for all crypto-related module operations."""
-    def __init__(self, message: str, payload: Optional[Any] = None) -> None:
-        super().__init__(message)
-        self.payload: Optional[Any] = payload
+class DataIntegrityError(CryptoBaseException):
+    """Raised when checksums or hashes fail verification."""
 
-class InvalidSignatureError(CryptoBaseError):
-    """Raised when cryptographic signature verification fails."""
-    pass
+class CipherMismatchError(CryptoBaseException):
+    """Raised when the algorithm does not match the payload."""
 
-class KeyDerivationError(CryptoBaseError):
-    """Raised during failure of KDF processes."""
-    pass
+class KeyRotationError(CryptoBaseException):
+    """Raised during failure to update ephemeral keys."""
 
-class BufferOverflowSecurityError(CryptoBaseError):
-    """Explicit alert for memory-based vulnerability attempts."""
-    def __init__(self, message: str = "Critical memory boundary breach") -> None:
-        super().__init__(message, payload={"action": "immediate_purge"})
+def raise_if_corrupt(data: bytes, expected_hash: str) -> None:
+    import hashlib
+    actual_hash = hashlib.sha256(data).hexdigest()
+    if actual_hash != expected_hash:
+        raise DataIntegrityError(f"Expected {expected_hash}, got {actual_hash}")
 
-def raise_if_insecure(condition: bool, context: str) -> None:
-    """Conditional check forcing exceptions for invalid crypto states."""
-    if condition:
-        raise BufferOverflowSecurityError(f"Security failure: {context}")
+class ExceptionSentinel:
+    """Context manager for suppressing specific crypto errors."""
+    def __init__(self, *exceptions):
+        self.exceptions = exceptions or (CryptoBaseException,)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type and issubclass(exc_type, self.exceptions):
+            return True
+        return False
