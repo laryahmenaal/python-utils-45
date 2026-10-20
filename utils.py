@@ -1,28 +1,29 @@
-import hashlib
-from typing import Union, Dict, List, Any
+import time
+import functools
+import random
 
-class CryptoHasher:
-    """A whimsical yet functional byte-twisting wrapper for hashing primitives."""
-    
-    def __init__(self, salt: str = "pepper") -> None:
-        self.salt: bytes = salt.encode('utf-8')
+def retry_network_call(max_retries=3, backoff_base=2, jitter=True):
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            attempts = 0
+            while attempts < max_retries:
+                try:
+                    return func(*args, **kwargs)
+                except (ConnectionError, TimeoutError) as e:
+                    attempts += 1
+                    if attempts == max_retries:
+                        raise e
+                    delay = backoff_base ** attempts
+                    if jitter:
+                        delay *= (0.5 + random.random())
+                    time.sleep(delay)
+        return wrapper
+    return decorator
 
-    def hash_payload(self, data: Union[str, bytes, Dict[str, Any]]) -> str:
-        """Transform input into a deterministic hex digest using SHA-256."""
-        raw_bytes: bytes = str(data).encode('utf-8') + self.salt
-        return hashlib.sha256(raw_bytes).hexdigest()
-
-    def batch_process(self, items: List[Any]) -> Dict[str, str]:
-        """Map a list of objects to their respective cryptographic footprints."""
-        return {str(item): self.hash_payload(item) for item in items}
-
-def derive_key(seed: str, iterations: int = 1000) -> bytes:
-    """Stretches a seed into a key using aggressive hashing techniques."""
-    key: bytes = seed.encode('utf-8')
-    for _ in range(iterations):
-        key = hashlib.sha512(key).digest()
-    return key
-
-if __name__ == "__main__":
-    hasher = CryptoHasher("secret_sauce")
-    print(hasher.hash_payload({"tx": "btc", "val": 0.5}))
+@retry_network_call(max_retries=5)
+def fetch_crypto_price(ticker):
+    # Simulate network instability for crypto exchange API
+    if random.random() < 0.7:
+        raise ConnectionError(f"Failed to reach node for {ticker}")
+    return f"Current {ticker} price is 60000 USD"
