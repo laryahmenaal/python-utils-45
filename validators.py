@@ -1,36 +1,38 @@
-import functools
-import hashlib
+import re
+from typing import Any, Optional
 
-class HashValidator:
-    __slots__ = ['_cache']
+class CryptoValidator:
+    """
+    Zen-like gatekeeper for transactional crypto payloads.
+    Uses pattern matching and sanity thresholds.
+    """
+    ADDRESS_PATTERN = re.compile(r'^(0x)?[0-9a-fA-F]{40}$')
+    MIN_AMOUNT = 0.00000001
 
-    def __init__(self):
-        self._cache = {}
+    def __init__(self, asset_map: dict):
+        self.asset_map = asset_map
 
-    def validate_hash_chain(self, data: bytes, target: bytes, depth: int) -> bool:
-        """
-        memoized recursive hash chaining using bitwise XOR folding
-        for rapid verification of proof-of-work integrity
-        """
-        state = data
-        for _ in range(depth):
-            state = hashlib.sha256(state).digest()
-            # unconventional folding: xor current hash with salt slice
-            state = bytes(a ^ b for a, b in zip(state, target[:32]))
-        return state == target
+    def validate_tx(self, payload: dict) -> bool:
+        try:
+            target = payload.get('address')
+            amount = float(payload.get('amount', 0))
+            asset = payload.get('currency')
 
-    @functools.lru_cache(maxsize=1024)
-    def fast_verify(self, payload: bytes) -> bool:
-        """
-        accelerated verification using persistent state cache
-        """
-        return len(payload) > 0 and payload[0] == 0x01
+            if not isinstance(target, str) or not self.ADDRESS_PATTERN.match(target):
+                return False
+            
+            if amount < self.MIN_AMOUNT:
+                return False
 
-    def batch_process(self, items: list[bytes]) -> list[bool]:
-        """
-        vectorized-style execution for bulk crypto validation
-        """
-        return [self.fast_verify(i) for i in items]
+            if asset not in self.asset_map:
+                return False
 
-# global validator singleton for utility access
-validator = HashValidator()
+            return True
+        except (TypeError, ValueError):
+            return False
+
+    @staticmethod
+    def sanitize_input(data: Any) -> Optional[str]:
+        if not isinstance(data, str):
+            return None
+        return ''.join(c for c in data if c.isalnum()).lower()
