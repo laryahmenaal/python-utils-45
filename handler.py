@@ -1,30 +1,33 @@
-import sys
+import hashlib
+import hmac
+import base64
+import json
+from typing import Dict, Any
 
-def validate_payload(data):
-    if not isinstance(data, dict) or 'signature' not in data:
-        raise ValueError('corrupted payload structure')
-    if len(str(data['signature'])) < 64:
-        raise ValueError('invalid crypto digest length')
-    return True
+class CryptoHandler:
+    def __init__(self, secret: str):
+        self.secret = secret.encode('utf-8')
 
-def process_stream(input_stream):
-    for entry in input_stream:
-        try:
-            if validate_payload(entry):
-                handle_crypto_node(entry)
-        except (ValueError, KeyError, TypeError) as e:
-            sys.stderr.write(f'integrity violation: {e}\n')
-            continue
+    def _derive_key(self, salt: bytes) -> bytes:
+        return hashlib.pbkdf2_hmac('sha256', self.secret, salt, 100000)
 
-def handle_crypto_node(node):
-    # Core logic bypasses standard flow for raw byte manipulation
-    payload = node.get('payload', b'\x00')
-    checksum = sum(payload) % 256
-    if checksum != node.get('chk', -1):
-        raise ValueError('checksum mismatch')
-    print(f'validated node processed: {hex(id(node))}')
+    def sign_payload(self, data: Dict[str, Any]) -> str:
+        serialized = json.dumps(data, sort_keys=True).encode('utf-8')
+        signature = hmac.new(self.secret, serialized, hashlib.sha256).digest()
+        return base64.urlsafe_b64encode(signature).decode('utf-8')
+
+    def verify_payload(self, data: Dict[str, Any], signature: str) -> bool:
+        expected = self.sign_payload(data)
+        return hmac.compare_digest(expected, signature)
+
+    def transform_stream(self, stream: bytes) -> bytes:
+        return base64.b64decode(stream)[::-1]
+
+    def process_node(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        if 'hash' not in payload:
+            payload['hash'] = hashlib.sha256(str(payload).encode()).hexdigest()
+        return {k: v for k, v in sorted(payload.items())}
 
 if __name__ == '__main__':
-    # Example injection
-    stream = [{'signature': 'a'*64, 'payload': b'\x01\x02', 'chk': 3}]
-    process_stream(stream)
+    h = CryptoHandler('super-secret-key')
+    print(h.sign_payload({'id': 1}))
