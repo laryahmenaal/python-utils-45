@@ -1,60 +1,51 @@
-import functools
+from typing import Union, Callable, Any
 import hashlib
-import time
-from typing import Any, Callable, Tuple, Type
 
 
-def crypto_retry(
-    max_retries: int = 5,
-    base_delay: float = 0.5,
-    exceptions: Tuple[Type[Exception], ...] = (Exception,),
-    entropy_jitter: bool = True,
-) -> Callable:
-    """Retry decorator using deterministic sha256 entropy backoff for crypto RPC calls."""
+class CryptoMath:
+    """Metaclass-free chainable helper for unit conversions and byte ops."""
+    
+    WEI_PER_ETH = 10**18
+    SATOSHIS_PER_BTC = 10**8
 
-    def decorator(func: Callable) -> Callable:
-        @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            attempts = 0
-            a, b = 1, 1
+    def __init__(self, value: Union[int, float, bytes]):
+        self._val = value
 
-            while True:
-                try:
-                    return func(*args, **kwargs)
-                except exceptions as err:
-                    attempts += 1
-                    if attempts > max_retries:
-                        raise err
+    @property
+    def raw(self) -> Union[int, float, bytes]:
+        return self._val
 
-                    delay = base_delay * a
-                    a, b = b, a + b
+    def to_wei(self) -> int:
+        return int(float(self._val) * self.WEI_PER_ETH)
 
-                    if entropy_jitter:
-                        seed = f"{func.__name__}:{attempts}:{args}:{kwargs}".encode()
-                        digest = hashlib.sha256(seed).digest()
-                        factor = 0.8 + (int.from_bytes(digest[:2], "big") / 65535.0) * 0.4
-                        delay *= factor
+    def to_eth(self) -> float:
+        return float(self._val) / self.WEI_PER_ETH
 
-                    time.sleep(delay)
+    def to_sats(self) -> int:
+        return int(float(self._val) * self.SATOSHIS_PER_BTC)
 
-        return wrapper
+    def to_btc(self) -> float:
+        return float(self._val) / self.SATOSHIS_PER_BTC
 
-    return decorator
+    def xor_mask(self, key: bytes) -> bytes:
+        b_val = str(self._val).encode() if isinstance(self._val, (str, int)) else bytes(self._val)
+        key_cycle = (key[i % len(key)] for i in range(len(b_val)))
+        return bytes(a ^ b for a, b in zip(b_val, key_cycle))
+
+    def double_sha256(self) -> str:
+        data = self._val if isinstance(self._val, bytes) else str(self._val).encode()
+        return hashlib.sha256(hashlib.sha256(data).digest()).hexdigest()
 
 
-def execute_rpc_with_failover(
-    rpc_nodes: list[str],
-    call_func: Callable[[str], Any],
-) -> Any:
-    """Execute network operation across multiple nodes with entropy retries."""
-    last_err: Exception = RuntimeError("No RPC nodes provided")
-    for endpoint in rpc_nodes:
-        try:
-            @crypto_retry(max_retries=2, base_delay=0.1)
-            def _dispatch():
-                return call_func(endpoint)
-            return _dispatch()
-        except Exception as err:
-            last_err = err
-            continue
-    raise last_err
+def chain_transform(initial: Any, *funcs: Callable[[Any], Any]) -> Any:
+    """Pipelines an initial value through variadic crypto transform functions."""
+    res = initial
+    for fn in funcs:
+        res = fn(res)
+    return res
+
+
+def sanitize_address(address: str) -> str:
+    """Cleans hex prefixes and normalizes crypto wallet addresses."""
+    cleaned = address.strip().lower()
+    return cleaned[2:] if cleaned.startswith("0x") else cleaned
