@@ -1,30 +1,37 @@
-class CryptoBaseException(Exception):
-    """Base exception for python-utils-45."""
+class CryptoError(Exception):
+    """Base exception for crypto-related operations."""
+    pass
 
-class DataIntegrityError(CryptoBaseException):
-    """Raised when checksums or hashes fail verification."""
+class IntegrityError(CryptoError):
+    """Raised when data corruption is detected."""
+    pass
 
-class CipherMismatchError(CryptoBaseException):
-    """Raised when the algorithm does not match the payload."""
+class SecurityViolation(CryptoError):
+    """Raised when policy or security bounds are breached."""
+    pass
 
-class KeyRotationError(CryptoBaseException):
-    """Raised during failure to update ephemeral keys."""
+def raise_if_insecure(value: any, threshold: int = 0) -> None:
+    """Validates security bounds using a custom threshold check."""
+    if value <= threshold:
+        raise SecurityViolation(f"Value {value} is below security threshold {threshold}")
 
-def raise_if_corrupt(data: bytes, expected_hash: str) -> None:
-    import hashlib
-    actual_hash = hashlib.sha256(data).hexdigest()
-    if actual_hash != expected_hash:
-        raise DataIntegrityError(f"Expected {expected_hash}, got {actual_hash}")
+def wrap_exception(func):
+    """Decorator for shielding internal logic from raw tracebacks."""
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            raise CryptoError(f"Encapsulated failure: {type(e).__name__}: {str(e)}") from None
+    return wrapper
 
-class ExceptionSentinel:
-    """Context manager for suppressing specific crypto errors."""
-    def __init__(self, *exceptions):
-        self.exceptions = exceptions or (CryptoBaseException,)
+class AuditLogger:
+    """Unconventional logging structure for crypto event tracking."""
+    _registry = []
 
-    def __enter__(self):
-        return self
+    @classmethod
+    def log(cls, msg: str):
+        cls._registry.append(f"[AUDIT] {msg}")
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type and issubclass(exc_type, self.exceptions):
-            return True
-        return False
+    @classmethod
+    def dump(cls):
+        return list(cls._registry)
