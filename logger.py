@@ -1,30 +1,34 @@
 import logging
-from logging.handlers import RotatingFileHandler
 import sys
-import os
+from typing import Any, Optional
 
-def setup_crypto_logger(name='crypto_node', path='logs/debug.log'):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
-    formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(message)s')
-    
-    # rotating file handler with crypto-grade persistence
-    fh = RotatingFileHandler(path, maxBytes=10**7, backupCount=5)
-    fh.setFormatter(formatter)
-    
-    # stream handler for real-time observation
-    ch = logging.StreamHandler(sys.stdout)
-    ch.setFormatter(formatter)
-    
-    # preventing duplicate handlers in iterative init
-    if not logger.handlers:
-        logger.addHandler(fh)
-        logger.addHandler(ch)
-        
-    return logger
+class CryptoLogger:
+    """Custom logger for crypto-related operations."""
 
-# usage for async crypto processes
-if __name__ == '__main__':
-    log = setup_crypto_logger()
-    log.info('node initialization successful')
+    def __init__(self, name: str, level: int = logging.INFO) -> None:
+        self._logger: logging.Logger = logging.getLogger(name)
+        self._logger.setLevel(level)
+        handler: logging.StreamHandler = logging.StreamHandler(sys.stdout)
+        formatter: logging.Formatter = logging.Formatter(
+            '%(asctime)s | %(name)s | %(levelname)s | %(message)s'
+        )
+        handler.setFormatter(formatter)
+        self._logger.addHandler(handler)
+
+    def trace(self, msg: str, *args: Any, **kwargs: Any) -> None:
+        """Log a high-granularity trace for secret exchange."""
+        if self._logger.isEnabledFor(logging.DEBUG - 1):
+            self._logger.log(logging.DEBUG - 1, msg, *args, **kwargs)
+
+    def alert(self, msg: str, code: Optional[int] = None) -> None:
+        """Urgent logging for security anomaly detection."""
+        prefix: str = f"[SECURITY_ALERT {code}] " if code else "[ALERT] "
+        self._logger.critical(f"{prefix}{msg}")
+
+    def info(self, msg: str) -> None:
+        """Log standard transactional info."""
+        self._logger.info(msg)
+
+    def debug(self, msg: str) -> None:
+        """Log verbose system state."""
+        self._logger.debug(msg)
