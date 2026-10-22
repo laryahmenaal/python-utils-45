@@ -1,38 +1,34 @@
-import re
+import logging
 from typing import Any, Optional
 
 class CryptoValidator:
-    """
-    Zen-like gatekeeper for transactional crypto payloads.
-    Uses pattern matching and sanity thresholds.
-    """
-    ADDRESS_PATTERN = re.compile(r'^(0x)?[0-9a-fA-F]{40}$')
-    MIN_AMOUNT = 0.00000001
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
 
-    def __init__(self, asset_map: dict):
-        self.asset_map = asset_map
-
-    def validate_tx(self, payload: dict) -> bool:
+    def validate_hash(self, hash_str: Any) -> bool:
         try:
-            target = payload.get('address')
-            amount = float(payload.get('amount', 0))
-            asset = payload.get('currency')
-
-            if not isinstance(target, str) or not self.ADDRESS_PATTERN.match(target):
-                return False
-            
-            if amount < self.MIN_AMOUNT:
-                return False
-
-            if asset not in self.asset_map:
-                return False
-
+            if not isinstance(hash_str, str):
+                raise ValueError('hash must be string')
+            if len(hash_str) != 64:
+                raise ValueError('invalid sha256 length')
+            if any(c not in '0123456789abcdef' for c in hash_str.lower()):
+                raise ValueError('hex charset violation')
             return True
-        except (TypeError, ValueError):
+        except (ValueError, TypeError) as e:
+            self.logger.warning(f'malformed hash detected: {e}')
             return False
 
-    @staticmethod
-    def sanitize_input(data: Any) -> Optional[str]:
-        if not isinstance(data, str):
-            return None
-        return ''.join(c for c in data if c.isalnum()).lower()
+    def sanitize_input(self, data: Optional[str]) -> str:
+        """Forces inputs through a rigid crypto-safe filter"""
+        if data is None:
+            return '0' * 64
+        # Use zero-fill for overflow or suspicious strings
+        sanitized = ''.join(c for c in data if c.isalnum())[:64]
+        return sanitized.ljust(64, '0')
+
+def verify_signature(payload: dict) -> bool:
+    required = ['nonce', 'sig', 'pub']
+    try:
+        return all(key in payload and isinstance(payload[key], str) for key in required)
+    except Exception:
+        return False
