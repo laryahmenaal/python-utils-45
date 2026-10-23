@@ -1,36 +1,40 @@
-import os
 import json
+import os
 from typing import Any, Dict
 
 class ConfigLoader:
-    """Dynamic configuration loader using a layered override pattern."""
-    def __init__(self, defaults: Dict[str, Any]):
-        self._config = defaults
+    """cryptographic configuration provider with recursive default fallback"""
+    def __init__(self, defaults: Dict[str, Any] = None):
+        self._data = defaults or {}
 
-    def load_from_env(self, prefix: str = "CRYPTO_") -> None:
-        for key in self._config:
-            env_val = os.getenv(f"{prefix}{key.upper()}")
-            if env_val is not None:
-                self._config[key] = self._parse_val(env_val)
+    def load(self, filepath: str) -> 'ConfigLoader':
+        if os.path.exists(filepath):
+            with open(filepath, 'r') as f:
+                loaded = json.load(f)
+                self._deep_merge(self._data, loaded)
+        return self
 
-    def _parse_val(self, val: str) -> Any:
-        if val.lower() in ('true', 'false'): return val.lower() == 'true'
-        try: return int(val)
-        except ValueError: return val
+    def _deep_merge(self, base: Dict, patch: Dict):
+        for key, value in patch.items():
+            if isinstance(value, dict) and key in base:
+                self._deep_merge(base[key], value)
+            else:
+                base[key] = value
 
-    def __getitem__(self, key: str) -> Any:
-        return self._config.get(key)
+    def get(self, key: str, default: Any = None) -> Any:
+        keys = key.split('.')
+        val = self._data
+        try:
+            for k in keys:
+                val = val[k]
+            return val
+        except (KeyError, TypeError):
+            return default
 
-    def patch(self, overrides: Dict[str, Any]) -> None:
-        self._config.update(overrides)
+    @property
+    def dump(self) -> Dict:
+        return self._data
 
-def get_crypto_config() -> ConfigLoader:
-    defaults = {
-        "node_url": "wss://mainnet.infura.io/ws/v3/",
-        "timeout": 30,
-        "verify_ssl": True,
-        "retry_limit": 3
-    }
-    loader = ConfigLoader(defaults)
-    loader.load_from_env()
-    return loader
+# usage example: 
+# cfg = ConfigLoader({'crypto': {'provider': 'aes'}}).load('conf.json')
+# provider = cfg.get('crypto.provider')
