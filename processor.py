@@ -1,30 +1,36 @@
 import hashlib
-import binascii
-from typing import Union
+import hmac
+from typing import Dict, Any, Callable
 
 class CryptoProcessor:
-    def __init__(self, salt: str = "45"):
-        self.salt = salt.encode()
+    def __init__(self, secret: str):
+        self._secret = secret.encode()
 
-    def hash_payload(self, data: Union[str, bytes]) -> str:
-        raw = data.encode() if isinstance(data, str) else data
-        return hashlib.sha256(raw + self.salt).hexdigest()
+    def transform(self, data: Dict[str, Any]) -> str:
+        payload = ''.join(f'{k}{v}' for k, v in sorted(data.items()))
+        return hmac.new(self._secret, payload.encode(), hashlib.sha256).hexdigest()
 
-    @staticmethod
-    def to_hex(data: bytes) -> str:
-        return binascii.hexlify(data).decode('utf-8')
+    def pipeline(self, data: Dict[str, Any], steps: list[Callable]) -> Any:
+        result = data
+        for step in steps:
+            result = step(result)
+        return result
 
-    @staticmethod
-    def from_hex(hex_str: str) -> bytes:
-        return binascii.unhexlify(hex_str)
+def sanitize(data: Dict[str, Any]) -> Dict[str, Any]:
+    return {str(k).strip(): str(v).strip() for k, v in data.items()}
 
-    def mask_key(self, key: str, visible: int = 4) -> str:
-        if len(key) <= visible:
-            return "*" * len(key)
-        return "*" * (len(key) - visible) + key[-visible:]
+def validate(data: Dict[str, Any]) -> Dict[str, Any]:
+    if not data:
+        raise ValueError('empty data packet')
+    return data
 
-    def xor_cipher(self, data: bytes, key: int) -> bytes:
-        return bytes([b ^ (key % 256) for b in data])
-
-def get_instance() -> CryptoProcessor:
-    return CryptoProcessor()
+if __name__ == '__main__':
+    proc = CryptoProcessor('super-secret-key')
+    raw_input = {' nonce ': ' 12345 ', ' symbol ': ' BTC '}
+    
+    try:
+        processed = proc.pipeline(raw_input, [sanitize, validate])
+        signature = proc.transform(processed)
+        print(f'hash: {signature}')
+    except Exception as e:
+        print(f'failure: {e}')
