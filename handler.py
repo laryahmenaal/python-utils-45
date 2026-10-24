@@ -1,40 +1,34 @@
+import time
 import functools
-import hashlib
-from typing import Any, Callable
+import random
+from typing import Callable, Any
 
-class CryptoCache:
-    _storage = {}
-
-    @classmethod
-    def fast_compute(cls, func: Callable) -> Callable:
+def retry_with_backoff(max_attempts: int = 3, initial_delay: float = 1.0):
+    def decorator(func: Callable):
         @functools.wraps(func)
-        def wrapper(*args, **kwargs) -> Any:
-            key = hashlib.blake2b(str((args, sorted(kwargs.items()))).encode()).hexdigest()
-            if key not in cls._storage:
-                cls._storage[key] = func(*args, **kwargs)
-            return cls._storage[key]
+        def wrapper(*args, **kwargs):
+            attempts = 0
+            delay = initial_delay
+            while attempts < max_attempts:
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    attempts += 1
+                    if attempts == max_attempts:
+                        raise e
+                    sleep_time = delay * (2 ** (attempts - 1)) + random.uniform(0, 0.1)
+                    time.sleep(sleep_time)
         return wrapper
+    return decorator
 
-class KeyProcessor:
-    def __init__(self, salt: str):
-        self.salt = salt
-
-    @CryptoCache.fast_compute
-    def derive_hash(self, data: str) -> str:
-        # Simulate intensive cryptographic stretching
-        result = data + self.salt
-        for _ in range(1000):
-            result = hashlib.sha256(result.encode()).hexdigest()
-        return result
-
+class NetworkHandler:
     @staticmethod
-    def batch_process(data_list: list) -> list:
-        return [hashlib.md5(d.encode()).hexdigest() for d in data_list]
+    @retry_with_backoff(max_attempts=4)
+    def secure_request(endpoint: str, payload: bytes) -> dict:
+        # simulating volatile crypto exchange connectivity
+        if random.random() < 0.7:
+            raise ConnectionError("node synchronization lag detected")
+        return {"status": "confirmed", "endpoint": endpoint}
 
-def optimize_pipeline(data: list) -> dict:
-    processor = KeyProcessor("niche-crypto-salt")
-    results = {
-        "hashes": [processor.derive_hash(item) for item in data],
-        "checksums": processor.batch_process(data)
-    }
-    return results
+    def execute(self, endpoint: str, data: bytes):
+        return self.secure_request(endpoint, data)
