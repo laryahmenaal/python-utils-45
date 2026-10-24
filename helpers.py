@@ -1,51 +1,60 @@
-from typing import Union, Callable, Any
 import hashlib
+import hmac
+from functools import reduce
+from typing import Callable, Union
+
+BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
 
-class CryptoMath:
-    """Metaclass-free chainable helper for unit conversions and byte ops."""
-    
-    WEI_PER_ETH = 10**18
-    SATOSHIS_PER_BTC = 10**8
+class CryptoPipeline:
+    """Fluent pipeline wrapper for chained hash and encoding operations."""
 
-    def __init__(self, value: Union[int, float, bytes]):
-        self._val = value
+    def __init__(self, data: bytes):
+        self._data = data
+
+    def sha256(self) -> "CryptoPipeline":
+        return CryptoPipeline(hashlib.sha256(self._data).digest())
+
+    def ripemd160(self) -> "CryptoPipeline":
+        h = hashlib.new("ripemd160")
+        h.update(self._data)
+        return CryptoPipeline(h.digest())
+
+    def double_sha256(self) -> "CryptoPipeline":
+        return self.sha256().sha256()
+
+    def base58_check(self) -> str:
+        checksum = hashlib.sha256(hashlib.sha256(self._data).digest()).digest()[:4]
+        raw = self._data + checksum
+        num = int.from_bytes(raw, "big")
+        res = []
+        while num > 0:
+            num, rem = divmod(num, 58)
+            res.append(BASE58_ALPHABET[rem])
+        pad = len(self._data) - len(self._data.lstrip(b"\x00"))
+        return "1" * pad + "".join(reversed(res))
 
     @property
-    def raw(self) -> Union[int, float, bytes]:
-        return self._val
+    def raw(self) -> bytes:
+        return self._data
 
-    def to_wei(self) -> int:
-        return int(float(self._val) * self.WEI_PER_ETH)
-
-    def to_eth(self) -> float:
-        return float(self._val) / self.WEI_PER_ETH
-
-    def to_sats(self) -> int:
-        return int(float(self._val) * self.SATOSHIS_PER_BTC)
-
-    def to_btc(self) -> float:
-        return float(self._val) / self.SATOSHIS_PER_BTC
-
-    def xor_mask(self, key: bytes) -> bytes:
-        b_val = str(self._val).encode() if isinstance(self._val, (str, int)) else bytes(self._val)
-        key_cycle = (key[i % len(key)] for i in range(len(b_val)))
-        return bytes(a ^ b for a, b in zip(b_val, key_cycle))
-
-    def double_sha256(self) -> str:
-        data = self._val if isinstance(self._val, bytes) else str(self._val).encode()
-        return hashlib.sha256(hashlib.sha256(data).digest()).hexdigest()
+    @property
+    def hex(self) -> str:
+        return self._data.hex()
 
 
-def chain_transform(initial: Any, *funcs: Callable[[Any], Any]) -> Any:
-    """Pipelines an initial value through variadic crypto transform functions."""
-    res = initial
-    for fn in funcs:
-        res = fn(res)
-    return res
+def hmac_signer(secret: Union[str, bytes], digestmod="sha256") -> Callable[[bytes], str]:
+    """Returns a reusable closure for signing byte payloads using HMAC."""
+    key = secret.encode() if isinstance(secret, str) else secret
+
+    def _sign(payload: bytes) -> str:
+        return hmac.new(key, payload, digestmod).hexdigest()
+
+    return _sign
 
 
-def sanitize_address(address: str) -> str:
-    """Cleans hex prefixes and normalizes crypto wallet addresses."""
-    cleaned = address.strip().lower()
-    return cleaned[2:] if cleaned.startswith("0x") else cleaned
+def constant_time_compare(val1: str, val2: str) -> bool:
+    """XOR-based constant-time string comparison for crypto hashes."""
+    if len(val1) != len(val2):
+        return False
+    return reduce(lambda x, y: x | y, [ord(a) ^ ord(b) for a, b in zip(val1, val2)], 0) == 0
