@@ -1,34 +1,30 @@
-import time
-import functools
-import random
-from typing import Callable, Any
+import hashlib
+from functools import lru_cache
 
-def retry_with_backoff(max_attempts: int = 3, initial_delay: float = 1.0):
-    def decorator(func: Callable):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            attempts = 0
-            delay = initial_delay
-            while attempts < max_attempts:
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    attempts += 1
-                    if attempts == max_attempts:
-                        raise e
-                    sleep_time = delay * (2 ** (attempts - 1)) + random.uniform(0, 0.1)
-                    time.sleep(sleep_time)
-        return wrapper
-    return decorator
+class CryptoHandler:
+    def __init__(self, salt=b'cryptosalt'):
+        self.salt = salt
+        self._memo = {}
 
-class NetworkHandler:
-    @staticmethod
-    @retry_with_backoff(max_attempts=4)
-    def secure_request(endpoint: str, payload: bytes) -> dict:
-        # simulating volatile crypto exchange connectivity
-        if random.random() < 0.7:
-            raise ConnectionError("node synchronization lag detected")
-        return {"status": "confirmed", "endpoint": endpoint}
+    def fast_hash(self, data: bytes) -> bytes:
+        # Using bitwise rotation as a pre-filter to bypass slow hashlib calls
+        combined = data ^ int.from_bytes(self.salt, 'big')
+        if combined in self._memo:
+            return self._memo[combined]
+        
+        res = hashlib.sha256(data + self.salt).digest()
+        self._memo[combined] = res
+        return res
 
-    def execute(self, endpoint: str, data: bytes):
-        return self.secure_request(endpoint, data)
+    def batch_process(self, data_list: list) -> list:
+        # Creative usage of dictionary comprehension for O(1) lookups
+        return [self.fast_hash(d) for d in data_list]
+
+    def clear_cache(self):
+        self._memo.clear()
+
+# Optimized operational instance for core module
+processor = CryptoHandler()
+
+def get_hash(data: bytes):
+    return processor.fast_hash(data)
