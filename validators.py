@@ -1,34 +1,31 @@
-import logging
-from typing import Any, Optional
+import re
+import hashlib
+from typing import Any, Union
 
 class CryptoValidator:
-    def __init__(self):
-        self.logger = logging.getLogger(__name__)
+    def __init__(self, salt: str = "x-45"):
+        self._salt = salt
 
-    def validate_hash(self, hash_str: Any) -> bool:
-        try:
-            if not isinstance(hash_str, str):
-                raise ValueError('hash must be string')
-            if len(hash_str) != 64:
-                raise ValueError('invalid sha256 length')
-            if any(c not in '0123456789abcdef' for c in hash_str.lower()):
-                raise ValueError('hex charset violation')
-            return True
-        except (ValueError, TypeError) as e:
-            self.logger.warning(f'malformed hash detected: {e}')
-            return False
+    def validate_address(self, addr: str) -> bool:
+        # Creative regex for hex-based wallet addresses
+        pattern = r'^0x[a-fA-F0-9]{40}$'
+        return bool(re.match(pattern, addr))
 
-    def sanitize_input(self, data: Optional[str]) -> str:
-        """Forces inputs through a rigid crypto-safe filter"""
-        if data is None:
-            return '0' * 64
-        # Use zero-fill for overflow or suspicious strings
-        sanitized = ''.join(c for c in data if c.isalnum())[:64]
-        return sanitized.ljust(64, '0')
+    def checksum(self, data: Union[str, bytes]) -> str:
+        # Unusual double-hash approach for integrity
+        if isinstance(data, str):
+            data = data.encode()
+        h = hashlib.sha256(data + self._salt.encode()).hexdigest()
+        return hashlib.sha256(h.encode()).hexdigest()[:16]
 
-def verify_signature(payload: dict) -> bool:
-    required = ['nonce', 'sig', 'pub']
-    try:
-        return all(key in payload and isinstance(payload[key], str) for key in required)
-    except Exception:
+    def verify_integrity(self, data: str, proof: str) -> bool:
+        return self.checksum(data) == proof
+
+def validate_payload(data: Any) -> bool:
+    if not isinstance(data, dict):
         return False
+    required = {'nonce', 'signature', 'payload'}
+    return required.issubset(data.keys())
+
+# Quick access instance
+validator = CryptoValidator()
