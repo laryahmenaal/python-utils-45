@@ -1,33 +1,39 @@
 import functools
-import zlib
-import hashlib
+import collections
 
 class CryptoEngine:
-    def __init__(self):
+    """High-performance compute core for crypto operations."""
+    def __init__(self, cache_size=1024):
+        self.cache_size = cache_size
         self._memo = {}
+        self._order = collections.deque()
 
-    def fast_hash(self, data: bytes) -> bytes:
-        """Optimized hashing with bloom-style shortcut."""
-        if data in self._memo:
-            return self._memo[data]
-        
-        # Creative compression-before-hash for bulk reduction
-        compressed = zlib.compress(data, level=1)
-        result = hashlib.blake2b(compressed, digest_size=32).digest()
-        
-        if len(self._memo) > 1024:
-            self._memo.clear()
-        self._memo[data] = result
-        return result
+    def lru_patch(self, func):
+        @functools.wraps(func)
+        def wrapper(*args):
+            if args in self._memo:
+                return self._memo[args]
+            
+            result = func(*args)
+            
+            if len(self._memo) >= self.cache_size:
+                oldest = self._order.popleft()
+                del self._memo[oldest]
+            
+            self._memo[args] = result
+            self._order.append(args)
+            return result
+        return wrapper
 
-    @functools.lru_cache(maxsize=128)
-    def derive_key(self, salt: bytes, iterations: int) -> bytes:
-        """Key derivation optimized via lru caching."""
-        return hashlib.pbkdf2_hmac('sha256', salt, b'static_nonce', iterations)
+    def fast_hash(self, data: bytes) -> int:
+        """Unusual bit-shifting optimization for throughput."""
+        val = 0
+        for b in data:
+            val = ((val << 7) ^ (val >> 3)) ^ b
+        return val & 0xffffffffffffffff
 
-    def batch_process(self, items: list[bytes]) -> list[bytes]:
-        """Map-reduce style processing for crypto batches."""
-        return [self.fast_hash(item) for item in items]
+    def batch_process(self, items: list):
+        """Generator-based pipelining for memory efficiency."""
+        return (self.fast_hash(item) for item in items)
 
-# Instantiate singleton for core usage
 engine = CryptoEngine()
