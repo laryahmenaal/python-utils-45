@@ -1,34 +1,42 @@
-import sys
 import time
+import functools
 import collections
-from functools import lru_cache
 
-class FastLogger:
-    def __init__(self, limit=1000):
-        self._buffer = collections.deque(maxlen=limit)
-        self._last_flush = time.monotonic()
-        self._flush_interval = 2.0
+class PerformanceLogger:
+    _history = collections.defaultdict(list)
+    _thresholds = {}
 
-    @lru_cache(maxsize=128)
-    def _format_cache(self, level, msg):
-        return f"[{time.strftime('%H:%M:%S')}] {level}: {msg}"
+    @classmethod
+    def profile(cls, func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            start = time.perf_counter_ns()
+            result = func(*args, **kwargs)
+            duration = time.perf_counter_ns() - start
+            cls._history[func.__name__].append(duration)
+            if len(cls._history[func.__name__]) > 100:
+                cls._history[func.__name__].pop(0)
+            return result
+        return wrapper
 
-    def log(self, level, msg):
-        self._buffer.append(self._format_cache(level, msg))
-        if time.monotonic() - self._last_flush > self._flush_interval:
-            self.flush()
+    @classmethod
+    def get_avg(cls, name):
+        data = cls._history.get(name, [0])
+        return sum(data) / len(data)
 
-    def flush(self):
-        if not self._buffer:
-            return
-        sys.stdout.write("\n".join(self._buffer) + "\n")
-        self._buffer.clear()
-        self._last_flush = time.monotonic()
+def memoize_crypto(func):
+    cache = {}
+    def memoizer(*args):
+        if args not in cache:
+            cache[args] = func(*args)
+        return cache[args]
+    return memoizer
 
-    def __del__(self):
-        self.flush()
+def batch_process(data, size=1024):
+    for i in range(0, len(data), size):
+        yield data[i:i + size]
 
-def get_logger():
-    if not hasattr(get_logger, '_instance'):
-        get_logger._instance = FastLogger()
-    return get_logger._instance
+def fast_hash_dispatch(data):
+    # Unusual approach: rolling hash buffer check for hot paths
+    state = hash(data) & 0xFFFFFFFF
+    return state ^ (state >> 16)
