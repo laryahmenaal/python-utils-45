@@ -1,23 +1,23 @@
 # python-utils-45
 
-A lightweight, high-performance toolkit for crypto developers designed to streamline blockchain data ingestion and wallet management. This library simplifies complex cryptographic operations and provides robust utilities for interacting with multi-chain environments.
+A lightweight Python toolkit designed for high-performance cryptocurrency data analysis and automated market monitoring. It provides efficient abstractions for interfacing with major exchange APIs and executing technical analysis on live order book data.
 
 ## Features
 
-*   **Address Validation Engine:** Built-in regex and checksum verification for BTC, ETH, and SOL wallet formats.
-*   **Asynchronous Price Aggregator:** Efficient multi-source fetcher for real-time asset pricing with built-in rate-limiting and cache support.
-*   **Transaction Signing Helpers:** Simplified interface for constructing and broadcasting raw transactions without manual hex-encoding.
-*   **Key Security Utilities:** Secure mnemonic generation and derivation path management compliant with BIP-39 and BIP-44 standards.
+*   **Asynchronous Exchange Client:** Built on `ccxt` with custom retry logic and connection pooling to ensure zero downtime during high-volatility events.
+*   **Real-time TA Engine:** Implements high-speed vectorized indicators (RSI, MACD, Bollinger Bands) optimized for large-scale candle data processing.
+*   **WebSocket Stream Manager:** Handles multi-pair socket subscriptions with automated heartbeat monitoring and automatic reconnection handling.
+*   **Data Normalization Layer:** Standardizes disparate API response formats from various exchanges into a unified schema for consistent analysis.
 
 ## Installation
 
-Install the package directly from PyPI:
+Ensure you have Python 3.9+ installed. Install the package via pip:
 
 ```bash
 pip install python-utils-45
 ```
 
-Alternatively, for the latest development build:
+For development mode, clone the repository and run:
 
 ```bash
 git clone https://github.com/Developer/python-utils-45.git
@@ -27,28 +27,25 @@ pip install -r requirements.txt
 
 ## Usage
 
-Quickly validate an Ethereum address and fetch its current balance through the integrated module:
+A quick example to fetch live price data and calculate the current RSI for BTC/USDT:
 
 ```python
-from pyutils45 import WalletManager, PriceEngine
+from utils_45.client import CryptoClient
+from utils_45.analysis import TechnicalEngine
 
-# Validate an address
-validator = WalletManager(network='ethereum')
-if validator.is_valid("0x71C7656..."):
-    print("Address verified.")
+client = CryptoClient(exchange="binance")
+engine = TechnicalEngine()
 
-# Fetch real-time market data
-engine = PriceEngine()
-price = engine.get_latest_price("BTC", "USD")
-print(f"Current BTC Price: ${price}")
+# Fetch latest 100 1h candles
+data = client.get_ohlcv("BTC/USDT", timeframe="1h", limit=100)
+
+# Compute RSI
+rsi = engine.calculate_rsi(data, period=14)
+print(f"Current RSI: {rsi[-1]}")
 ```
-
-## Contributing
-
-We welcome contributions from the crypto-engineering community. Please ensure all pull requests pass the existing test suite and adhere to PEP 8 standards.
 
 ## License
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Distributed under the MIT License. See `LICENSE` for more information.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
