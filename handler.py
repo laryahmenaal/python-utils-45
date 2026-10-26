@@ -1,30 +1,33 @@
 import hashlib
-from functools import lru_cache
+import hmac
+import base64
+from typing import Dict, Any
 
 class CryptoHandler:
-    def __init__(self, salt=b'cryptosalt'):
-        self.salt = salt
-        self._memo = {}
+    def __init__(self, secret: str):
+        self._secret = secret.encode()
 
-    def fast_hash(self, data: bytes) -> bytes:
-        # Using bitwise rotation as a pre-filter to bypass slow hashlib calls
-        combined = data ^ int.from_bytes(self.salt, 'big')
-        if combined in self._memo:
-            return self._memo[combined]
+    def sign_payload(self, data: str) -> str:
+        signature = hmac.new(self._secret, data.encode(), hashlib.sha256).digest()
+        return base64.urlsafe_b64encode(signature).decode()
+
+    def verify_payload(self, data: str, signature: str) -> bool:
+        expected = self.sign_payload(data)
+        return hmac.compare_digest(expected, signature)
+
+    @staticmethod
+    def sanitize_envelope(packet: Dict[str, Any]) -> Dict[str, Any]:
+        return {k: v for k, v in packet.items() if v is not None}
+
+def process_secure_stream(stream: Dict[str, Any], handler: CryptoHandler) -> Dict[str, Any]:
+    raw_data = stream.get('payload', '')
+    sig = stream.get('sig', '')
+    
+    if not handler.verify_payload(raw_data, sig):
+        raise ValueError('Invalid cryptographic signature')
         
-        res = hashlib.sha256(data + self.salt).digest()
-        self._memo[combined] = res
-        return res
-
-    def batch_process(self, data_list: list) -> list:
-        # Creative usage of dictionary comprehension for O(1) lookups
-        return [self.fast_hash(d) for d in data_list]
-
-    def clear_cache(self):
-        self._memo.clear()
-
-# Optimized operational instance for core module
-processor = CryptoHandler()
-
-def get_hash(data: bytes):
-    return processor.fast_hash(data)
+    return {
+        'status': 'verified',
+        'data': raw_data,
+        'metadata': handler.sanitize_envelope(stream.get('meta', {}))
+    }
