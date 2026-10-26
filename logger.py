@@ -1,42 +1,33 @@
 import time
-import functools
 import collections
+import functools
 
-class PerformanceLogger:
-    _history = collections.defaultdict(list)
-    _thresholds = {}
+class CryptoPerformanceLogger:
+    def __init__(self, limit=1000):
+        self._buffer = collections.deque(maxlen=limit)
+        self._registry = {}
 
-    @classmethod
-    def profile(cls, func):
+    def __call__(self, func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             start = time.perf_counter_ns()
             result = func(*args, **kwargs)
             duration = time.perf_counter_ns() - start
-            cls._history[func.__name__].append(duration)
-            if len(cls._history[func.__name__]) > 100:
-                cls._history[func.__name__].pop(0)
+            self._buffer.append((func.__name__, duration))
+            if len(self._buffer) >= self._buffer.maxlen:
+                self._flush_metrics()
             return result
         return wrapper
 
-    @classmethod
-    def get_avg(cls, name):
-        data = cls._history.get(name, [0])
-        return sum(data) / len(data)
+    def _flush_metrics(self):
+        aggregated = collections.defaultdict(list)
+        while self._buffer:
+            name, val = self._buffer.popleft()
+            aggregated[name].append(val)
+        for name, values in aggregated.items():
+            self._registry[name] = sum(values) / len(values)
 
-def memoize_crypto(func):
-    cache = {}
-    def memoizer(*args):
-        if args not in cache:
-            cache[args] = func(*args)
-        return cache[args]
-    return memoizer
+    def get_stats(self):
+        return dict(self._registry)
 
-def batch_process(data, size=1024):
-    for i in range(0, len(data), size):
-        yield data[i:i + size]
-
-def fast_hash_dispatch(data):
-    # Unusual approach: rolling hash buffer check for hot paths
-    state = hash(data) & 0xFFFFFFFF
-    return state ^ (state >> 16)
+perf_logger = CryptoPerformanceLogger(limit=500)
