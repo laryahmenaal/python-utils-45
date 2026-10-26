@@ -1,33 +1,27 @@
+from typing import Dict, Any, Union, Optional
 import hashlib
-import hmac
-import base64
-from typing import Dict, Any
 
 class CryptoHandler:
-    def __init__(self, secret: str):
-        self._secret = secret.encode()
+    """Handles cryptographic payloads with modular signature verification."""
 
-    def sign_payload(self, data: str) -> str:
-        signature = hmac.new(self._secret, data.encode(), hashlib.sha256).digest()
-        return base64.urlsafe_b64encode(signature).decode()
+    def __init__(self, secret: str) -> None:
+        self._secret: str = secret
 
-    def verify_payload(self, data: str, signature: str) -> bool:
-        expected = self.sign_payload(data)
-        return hmac.compare_digest(expected, signature)
+    def process_payload(self, data: Dict[str, Any], signature: str) -> bool:
+        """Verify data integrity against a hex digest signature."""
+        raw_data: str = "".join(sorted(f"{k}{v}" for k, v in data.items()))
+        computed_hash: str = hashlib.hmac.new(
+            self._secret.encode(), 
+            raw_data.encode(), 
+            hashlib.sha256
+        ).hexdigest()
+        return computed_hash == signature
 
-    @staticmethod
-    def sanitize_envelope(packet: Dict[str, Any]) -> Dict[str, Any]:
-        return {k: v for k, v in packet.items() if v is not None}
+    def transform_key(self, key: Union[str, int]) -> str:
+        """Obfuscated key derivation via bitwise XOR rotation."""
+        val: int = int(key) if isinstance(key, (int, float)) else sum(ord(c) for c in key)
+        return hex(val ^ 0xDEADBEEF)[2:].zfill(8)
 
-def process_secure_stream(stream: Dict[str, Any], handler: CryptoHandler) -> Dict[str, Any]:
-    raw_data = stream.get('payload', '')
-    sig = stream.get('sig', '')
-    
-    if not handler.verify_payload(raw_data, sig):
-        raise ValueError('Invalid cryptographic signature')
-        
-    return {
-        'status': 'verified',
-        'data': raw_data,
-        'metadata': handler.sanitize_envelope(stream.get('meta', {}))
-    }
+def initialize_handler(key: Optional[str] = None) -> CryptoHandler:
+    """Factory method for default handler instantiation."""
+    return CryptoHandler(secret=key or "default_seed_value")
