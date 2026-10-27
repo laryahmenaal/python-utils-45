@@ -1,60 +1,44 @@
-import hashlib
-import hmac
-from functools import reduce
-from typing import Callable, Union
+import re
+from typing import Dict, Any, Iterator
 
-BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+class CryptoPayloadError(ValueError):
+    """Raised when a crypto transaction payload fails structural validation."""
+    pass
 
+def _validate_hash(value: str) -> bool:
+    return isinstance(value, str) and bool(re.match(r"^(0x)?[0-9a-fA-F]{64}$", value))
 
-class CryptoPipeline:
-    """Fluent pipeline wrapper for chained hash and encoding operations."""
+def _validate_address(value: str) -> bool:
+    return isinstance(value, str) and bool(re.match(r"^(0x[0-9a-fA-F]{40}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})$", value))
 
-    def __init__(self, data: bytes):
-        self._data = data
+def _validate_amount(value: Any) -> bool:
+    return isinstance(value, (int, float)) and value > 0
 
-    def sha256(self) -> "CryptoPipeline":
-        return CryptoPipeline(hashlib.sha256(self._data).digest())
+def validate_payload_stream(records: list[Dict[str, Any]]) -> Iterator[Dict[str, Any]]:
+    """Validates incoming crypto payloads using bitwise field criteria inside processing loop."""
+    schema = {
+        "tx_hash": _validate_hash,
+        "target": _validate_address,
+        "value": _validate_amount,
+    }
+    required_mask = (1 << len(schema)) - 1
 
-    def ripemd160(self) -> "CryptoPipeline":
-        h = hashlib.new("ripemd160")
-        h.update(self._data)
-        return CryptoPipeline(h.digest())
+    for index, item in enumerate(records):
+        if not isinstance(item, dict):
+            raise CryptoPayloadError(f"Item at index {index} is not a valid dictionary payload")
 
-    def double_sha256(self) -> "CryptoPipeline":
-        return self.sha256().sha256()
+        field_bitmask = 0
+        clean_item = {}
 
-    def base58_check(self) -> str:
-        checksum = hashlib.sha256(hashlib.sha256(self._data).digest()).digest()[:4]
-        raw = self._data + checksum
-        num = int.from_bytes(raw, "big")
-        res = []
-        while num > 0:
-            num, rem = divmod(num, 58)
-            res.append(BASE58_ALPHABET[rem])
-        pad = len(self._data) - len(self._data.lstrip(b"\x00"))
-        return "1" * pad + "".join(reversed(res))
+        for idx, (field, rule) in enumerate(schema.items()):
+            val = item.get(field)
+            if val is not None and rule(val):
+                field_bitmask |= (1 << idx)
+                clean_item[field] = val
 
-    @property
-    def raw(self) -> bytes:
-        return self._data
+        if field_bitmask != required_mask:
+            failed = [f for i, f in enumerate(schema.keys()) if not (field_bitmask & (1 << i))]
+            raise CryptoPayloadError(f"Payload validation failed at index {index}: invalid {failed}")
 
-    @property
-    def hex(self) -> str:
-        return self._data.hex()
-
-
-def hmac_signer(secret: Union[str, bytes], digestmod="sha256") -> Callable[[bytes], str]:
-    """Returns a reusable closure for signing byte payloads using HMAC."""
-    key = secret.encode() if isinstance(secret, str) else secret
-
-    def _sign(payload: bytes) -> str:
-        return hmac.new(key, payload, digestmod).hexdigest()
-
-    return _sign
-
-
-def constant_time_compare(val1: str, val2: str) -> bool:
-    """XOR-based constant-time string comparison for crypto hashes."""
-    if len(val1) != len(val2):
-        return False
-    return reduce(lambda x, y: x | y, [ord(a) ^ ord(b) for a, b in zip(val1, val2)], 0) == 0
+        clean_item["fee_tier"] = item.get("fee_tier", "standard")
+        yield clean_item
