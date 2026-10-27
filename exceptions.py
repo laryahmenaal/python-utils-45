@@ -1,37 +1,50 @@
-class CryptoError(Exception):
-    """Base exception for crypto-related operations."""
-    pass
+"""Crypto domain exception matrix with automatic RPC fault generation."""
 
-class IntegrityError(CryptoError):
-    """Raised when data corruption is detected."""
-    pass
+from typing import Any, Dict, Optional, Type
 
-class SecurityViolation(CryptoError):
-    """Raised when policy or security bounds are breached."""
-    pass
 
-def raise_if_insecure(value: any, threshold: int = 0) -> None:
-    """Validates security bounds using a custom threshold check."""
-    if value <= threshold:
-        raise SecurityViolation(f"Value {value} is below security threshold {threshold}")
+class CryptoBaseException(Exception):
+    """Base exception class tracking fault codes and contextual payload."""
 
-def wrap_exception(func):
-    """Decorator for shielding internal logic from raw tracebacks."""
-    def wrapper(*args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except Exception as e:
-            raise CryptoError(f"Encapsulated failure: {type(e).__name__}: {str(e)}") from None
-    return wrapper
+    code: int = -32000
+    registry: Dict[int, Type["CryptoBaseException"]] = {}
 
-class AuditLogger:
-    """Unconventional logging structure for crypto event tracking."""
-    _registry = []
+    def __init_subclass__(cls, code: Optional[int] = None, **kwargs):
+        super().__init_subclass__(**kwargs)
+        if code is not None:
+            cls.code = code
+            cls.registry[code] = cls
 
-    @classmethod
-    def log(cls, msg: str):
-        cls._registry.append(f"[AUDIT] {msg}")
+    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
+        super().__init__(message)
+        self.message = message
+        self.details = details or {}
+
+    def to_rpc_fault(self) -> Dict[str, Any]:
+        """Serialize exception into Ethereum JSON-RPC compatible error object."""
+        fault = {"code": self.code, "message": self.message}
+        if self.details:
+            fault["data"] = self.details
+        return fault
 
     @classmethod
-    def dump(cls):
-        return list(cls._registry)
+    def from_code(cls, code: int, message: str, details: Optional[Dict[str, Any]] = None) -> "CryptoBaseException":
+        """Factory method restoring specific exception subclass from numeric RPC code."""
+        target_cls = cls.registry.get(code, CryptoBaseException)
+        return target_cls(message, details)
+
+
+class KeyManagementError(CryptoBaseException, code=-32001):
+    """Raised when cryptographic key derivation or signing fails."""
+
+
+class NonceCollisionError(CryptoBaseException, code=-32002):
+    """Raised when transaction nonce conflicts with mempool state."""
+
+
+class GasPriceSpikeException(CryptoBaseException, code=-32003):
+    """Raised when current network gas price exceeds user envelope safety margin."""
+
+
+class InvalidSignatureError(CryptoBaseException, code=-32004):
+    """Raised when ECDSA or Ed25519 signature verification check fails."""
