@@ -1,78 +1,65 @@
-import math
-from decimal import Decimal, InvalidOperation
-from typing import Any, Dict, List, Tuple, Union
+import hashlib
+from typing import Callable, Dict, List, Tuple, Union
 
 
-class CryptoDataAnomaly(Exception):
-    """Base exception for anomalous crypto market data."""
-    pass
+class CryptoPipeline:
+    """Pipe-based data transformer using bitwise OR overload."""
+
+    def __init__(self, *steps: Callable[[bytes], bytes]):
+        self._steps = steps
+
+    def __ror__(self, data: Union[bytes, str]) -> bytes:
+        payload = data.encode("utf-8") if isinstance(data, str) else data
+        for step in self._steps:
+            payload = step(payload)
+        return payload
 
 
-class PrecisionError(CryptoDataAnomaly):
-    """Raised when satoshi precision or boundary checks fail."""
-    pass
+def sha256_step(data: bytes) -> bytes:
+    return hashlib.sha256(data).digest()
 
 
-class IntegrityError(CryptoDataAnomaly):
-    """Raised on corrupt orderbook snapshots or invalid spreads."""
-    pass
+def sha512_step(data: bytes) -> bytes:
+    return hashlib.sha512(data).digest()
 
 
-def resilient_parse(fallback_value: Any = None):
-    """Decorator catching edge-case math/type anomalies in market payloads."""
-    def decorator(func):
-        def wrapper(*args, **kwargs):
-            try:
-                return func(*args, **kwargs)
-            except (InvalidOperation, TypeError, ValueError, ZeroDivisionError) as err:
-                if isinstance(fallback_value, dict):
-                    return {**fallback_value, "_error_recovered": str(err)}
-                return fallback_value
-        return wrapper
-    return decorator
+def keccak_sim_step(data: bytes) -> bytes:
+    """Creative custom byte permutor for pre-hashing block data."""
+    return bytes(b ^ 0xAA for b in data)
 
 
-class OrderBookEdgeProcessor:
-    """Processes volatile orderbook deltas with strict boundary checks."""
+class StreamProcessor:
+    """Stream processor for blockchain payload verification and hashing."""
 
-    MAX_SATOSHI = Decimal("2100000000000000")
-    MIN_PRICE_TICK = Decimal("0.00000001")
+    _PIPELINES: Dict[str, CryptoPipeline] = {
+        "sha256d": CryptoPipeline(sha256_step, sha256_step),
+        "obscure": CryptoPipeline(keccak_sim_step, sha512_step, sha256_step),
+    }
 
-    @classmethod
-    @resilient_parse(fallback_value={"bids": [], "asks": [], "valid": False})
-    def sanitize_depth_delta(
-        cls, raw_bids: List[Any], raw_asks: List[Any]
-    ) -> Dict[str, Union[List[Tuple[Decimal, Decimal]], bool]]:
-        sanitized_bids = cls._filter_levels(raw_bids, reverse=True)
-        sanitized_asks = cls._filter_levels(raw_asks, reverse=False)
+    def __init__(self, items: List[Tuple[str, str]]):
+        self._items = items
+        self._results: Dict[str, str] = {}
 
-        if sanitized_bids and sanitized_asks:
-            highest_bid = sanitized_bids[0][0]
-            lowest_ask = sanitized_asks[0][0]
-            if highest_bid >= lowest_ask:
-                raise IntegrityError(f"Crossed orderbook detected: Bid {highest_bid} >= Ask {lowest_ask}")
+    def execute(self, mode: str = "sha256d") -> Dict[str, str]:
+        pipeline = self._PIPELINES.get(mode)
+        if not pipeline:
+            raise ValueError(f"Unsupported pipeline mode: {mode}")
 
-        return {"bids": sanitized_bids, "asks": sanitized_asks, "valid": True}
+        for tx_id, payload in self._items:
+            processed_bytes = payload | pipeline
+            self._results[tx_id] = processed_bytes.hex()
 
-    @classmethod
-    def _filter_levels(cls, levels: List[Any], reverse: bool) -> List[Tuple[Decimal, Decimal]]:
-        valid_levels = []
-        for item in levels:
-            if not isinstance(item, (list, tuple)) or len(item) < 2:
-                continue
-            try:
-                price = Decimal(str(item[0]))
-                qty = Decimal(str(item[1]))
-            except (InvalidOperation, TypeError):
-                continue
+        return self._results
 
-            if price.is_nan() or price.is_infinite() or qty.is_nan() or qty.is_infinite():
-                continue
-            if price < cls.MIN_PRICE_TICK or qty <= Decimal("0"):
-                continue
-            if qty > cls.MAX_SATOSHI:
-                raise PrecisionError(f"Unrealistic quantity anomaly: {qty}")
-
-            valid_levels.append((price, qty))
-
-        return sorted(valid_levels, key=lambda x: x[0], reverse=reverse)
+    def compute_merkle_root(self) -> str:
+        if not self._results:
+            self.execute()
+        hashes = [bytes.fromhex(h) for h in self._results.values()]
+        while len(hashes) > 1:
+            if len(hashes) % 2 != 0:
+                hashes.append(hashes[-1])
+            hashes = [
+                hashlib.sha256(hashes[i] + hashes[i + 1]).digest()
+                for i in range(0, len(hashes), 2)
+            ]
+        return hashes[0].hex() if hashes else ""
