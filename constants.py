@@ -1,32 +1,28 @@
-import enum
-from typing import Final
+from typing import Final, Dict, Any
 
-class CryptoConstants(enum.Enum):
-    HASH_ALGO: Final[str] = 'sha256'
-    CURVE_NAME: Final[str] = 'secp256k1'
-    KEY_SIZE_BYTES: Final[int] = 32
-    NONCE_SIZE: Final[int] = 12
-    PBKDF2_ITERATIONS: Final[int] = 600000
+# Cryptographic constant definitions for python-utils-45
 
-class NetworkFlags(enum.IntFlag):
-    MAINNET = 0x01
-    TESTNET = 0x02
-    REGTEST = 0x04
-    STAGING = 0x08
+CURVE_SECP256K1: Final[str] = 'secp256k1'
+DEFAULT_ENCODING: Final[str] = 'utf-8'
+PBKDF2_ITERATIONS: Final[int] = 600_000
 
-def get_chain_params(flag: NetworkFlags) -> dict:
-    mapping = {
-        NetworkFlags.MAINNET: {'prefix': 0x00, 'port': 8333},
-        NetworkFlags.TESTNET: {'prefix': 0x6F, 'port': 18333},
-        NetworkFlags.REGTEST: {'prefix': 0x6F, 'port': 18444}
-    }
-    return mapping.get(flag, {})
+CIPHER_SUITES: Dict[str, Any] = {
+    'aes-256-gcm': {'key_len': 32, 'iv_len': 12, 'tag_len': 16},
+    'chacha20-poly1305': {'key_len': 32, 'nonce_len': 12}
+}
 
-ENCODING: Final[str] = 'utf-8'
-VERSION_TAG: Final[str] = 'v0.4.5-crypto'
+def get_cipher_config(cipher_name: str) -> Dict[str, int]:
+    """
+    Retrieve configuration parameters for a specified cipher suite.
 
-class StatusCodes:
-    SUCCESS: Final[int] = 0
-    ERR_KEY_INVALID: Final[int] = 101
-    ERR_SIG_FAILED: Final[int] = 102
-    ERR_IO_TIMEOUT: Final[int] = 103
+    :param cipher_name: The identifier of the cipher algorithm.
+    :return: Dictionary containing key, iv, or nonce length requirements.
+    :raises ValueError: If the cipher is not supported in the current registry.
+    """
+    if cipher_name not in CIPHER_SUITES:
+        raise ValueError(f"Unsupported cipher suite: {cipher_name}")
+    return CIPHER_SUITES[cipher_name]
+
+# Network constants for node communication
+MAX_RETRY_ATTEMPTS: Final[int] = 3
+TIMEOUT_SECONDS: Final[float] = 30.5
