@@ -1,39 +1,45 @@
-import functools
-import collections
+import hashlib
+from typing import List, Sequence
 
-class CryptoEngine:
-    """High-performance compute core for crypto operations."""
-    def __init__(self, cache_size=1024):
-        self.cache_size = cache_size
-        self._memo = {}
-        self._order = collections.deque()
+B58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
-    def lru_patch(self, func):
-        @functools.wraps(func)
-        def wrapper(*args):
-            if args in self._memo:
-                return self._memo[args]
-            
-            result = func(*args)
-            
-            if len(self._memo) >= self.cache_size:
-                oldest = self._order.popleft()
-                del self._memo[oldest]
-            
-            self._memo[args] = result
-            self._order.append(args)
-            return result
-        return wrapper
 
-    def fast_hash(self, data: bytes) -> int:
-        """Unusual bit-shifting optimization for throughput."""
-        val = 0
-        for b in data:
-            val = ((val << 7) ^ (val >> 3)) ^ b
-        return val & 0xffffffffffffffff
+def double_sha256(data: bytes) -> bytes:
+    return hashlib.sha256(hashlib.sha256(data).digest()).digest()
 
-    def batch_process(self, items: list):
-        """Generator-based pipelining for memory efficiency."""
-        return (self.fast_hash(item) for item in items)
 
-engine = CryptoEngine()
+def base58_check_encode(payload: bytes, version: bytes = b"\x00") -> str:
+    data = version + payload
+    checksum = double_sha256(data)[:4]
+    combined = data + checksum
+    value = int.from_bytes(combined, "big")
+    
+    chars: List[str] = []
+    while value > 0:
+        value, mod = divmod(value, 58)
+        chars.append(B58_ALPHABET[mod])
+        
+    zeros = len(combined) - len(combined.lstrip(b"\x00"))
+    return B58_ALPHABET[0] * zeros + "".join(reversed(chars))
+
+
+def merkle_tree_root(leaf_hashes: Sequence[bytes]) -> bytes:
+    if not leaf_hashes:
+        return b"\x00" * 32
+    nodes = list(leaf_hashes)
+    while len(nodes) > 1:
+        if len(nodes) % 2 != 0:
+            nodes.append(nodes[-1])
+        nodes = [
+            double_sha256(nodes[i] + nodes[i + 1])
+            for i in range(0, len(nodes), 2)
+        ]
+    return nodes[0]
+
+
+def compact_xor_fold(data: bytes, chunk_size: int = 16) -> bytes:
+    chunks = [data[i:i + chunk_size] for i in range(0, len(data), chunk_size)]
+    return bytes(
+        sum(c[i] for c in chunks if i < len(c)) % 256
+        for i in range(max(len(c) for c in chunks))
+    )
