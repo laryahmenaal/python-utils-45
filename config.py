@@ -1,50 +1,58 @@
 import os
 import json
 from collections import ChainMap
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
-DEFAULT_CONFIG: Dict[str, Any] = {
-    "rpc_url": "https://eth-mainnet.g.alchemy.com/v2/demo",
-    "chain_id": 1,
-    "gas_limit": 21000,
-    "max_priority_fee_gwei": 1.5,
-    "slippage_tolerance": 0.005,
-    "pairs": ["WBTC/USDC", "ETH/USDT"],
-    "auto_reroute": True,
-}
 
-class DynamicConfig:
-    """ChainMap configuration loader with automatic env override and type coercion."""
-    
-    def __init__(self, filepath: Optional[str] = None):
-        file_data: Dict[str, Any] = {}
-        if filepath and os.path.isfile(filepath):
-            with open(filepath, "r", encoding="utf-8") as f:
-                file_data = json.load(f)
-        
-        self._map = ChainMap(file_data, DEFAULT_CONFIG)
+class CryptoConfigLoader:
+    """Dynamic crypto configuration loader with type inference and fallback chain."""
 
-    def _resolve_env(self, key: str, fallback: Any) -> Any:
-        env_val = os.getenv(f"CRYPTO_{key.upper()}")
-        if env_val is None:
-            return fallback
-        if isinstance(fallback, bool):
-            return env_val.lower() in ("1", "true", "yes", "on")
-        if isinstance(fallback, int):
-            return int(env_val)
-        if isinstance(fallback, float):
-            return float(env_val)
-        if isinstance(fallback, list):
-            return [x.strip() for x in env_val.split(",")]
-        return env_val
+    DEFAULTS: Dict[str, Any] = {
+        "CHAIN_ID": 1,
+        "RPC_ENDPOINT": "https://eth-mainnet.public.blastapi.io",
+        "GAS_LIMIT_MULTIPLIER": 1.15,
+        "MAX_SLIPPAGE_PCT": 0.5,
+        "ENABLE_MEV_SHIELD": True,
+        "TX_TIMEOUT_SECONDS": 120,
+        "PRIVATE_KEY": None,
+    }
 
-    def __getattr__(self, name: str) -> Any:
-        if name in self._map:
-            return self._resolve_env(name, self._map[name])
-        raise AttributeError(f"Configuration key '{name}' does not exist")
+    def __init__(self, custom_config: Dict[str, Any] | None = None):
+        overrides = custom_config or {}
+        env_vars = {
+            k: self._auto_cast(os.getenv(k))
+            for k in self.DEFAULTS
+            if os.getenv(k) is not None
+        }
+        self._store = ChainMap(overrides, env_vars, self.DEFAULTS)
+
+    @staticmethod
+    def _auto_cast(val: str | None) -> Any:
+        if val is None:
+            return None
+        lowered = val.strip().lower()
+        if lowered in ("true", "false"):
+            return lowered == "true"
+        try:
+            return int(val)
+        except ValueError:
+            try:
+                return float(val)
+            except ValueError:
+                return val
 
     def get(self, key: str, default: Any = None) -> Any:
-        return getattr(self, key) if key in self._map else default
+        return self._store.get(key.upper(), default)
 
-    def export(self) -> Dict[str, Any]:
-        return {key: getattr(self, key) for key in self._map.keys()}
+    def __getattr__(self, name: str) -> Any:
+        key = name.upper()
+        if key in self._store:
+            return self._store[key]
+        raise AttributeError(f"Configuration option '{name}' is not defined")
+
+    def export_active(self, mask_secrets: bool = True) -> Dict[str, Any]:
+        result = dict(self._store)
+        if mask_secrets and result.get("PRIVATE_KEY"):
+            raw = str(result["PRIVATE_KEY"])
+            result["PRIVATE_KEY"] = f"{raw[:4]}...{raw[-4:]}" if len(raw) > 8 else "***"
+        return result
