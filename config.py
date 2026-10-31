@@ -1,58 +1,30 @@
-import os
 import json
-from collections import ChainMap
+import os
 from typing import Any, Dict
 
+class ConfigLoader:
+    def __init__(self, defaults: Dict[str, Any], env_prefix: str = 'CRYPTO_'):
+        self._conf = defaults
+        self._prefix = env_prefix
 
-class CryptoConfigLoader:
-    """Dynamic crypto configuration loader with type inference and fallback chain."""
-
-    DEFAULTS: Dict[str, Any] = {
-        "CHAIN_ID": 1,
-        "RPC_ENDPOINT": "https://eth-mainnet.public.blastapi.io",
-        "GAS_LIMIT_MULTIPLIER": 1.15,
-        "MAX_SLIPPAGE_PCT": 0.5,
-        "ENABLE_MEV_SHIELD": True,
-        "TX_TIMEOUT_SECONDS": 120,
-        "PRIVATE_KEY": None,
-    }
-
-    def __init__(self, custom_config: Dict[str, Any] | None = None):
-        overrides = custom_config or {}
-        env_vars = {
-            k: self._auto_cast(os.getenv(k))
-            for k in self.DEFAULTS
-            if os.getenv(k) is not None
-        }
-        self._store = ChainMap(overrides, env_vars, self.DEFAULTS)
-
-    @staticmethod
-    def _auto_cast(val: str | None) -> Any:
-        if val is None:
-            return None
-        lowered = val.strip().lower()
-        if lowered in ("true", "false"):
-            return lowered == "true"
-        try:
-            return int(val)
-        except ValueError:
-            try:
-                return float(val)
-            except ValueError:
-                return val
-
-    def get(self, key: str, default: Any = None) -> Any:
-        return self._store.get(key.upper(), default)
+    def load_from_file(self, path: str) -> None:
+        if os.path.exists(path):
+            with open(path, 'r') as f:
+                self._conf.update(json.load(f))
 
     def __getattr__(self, name: str) -> Any:
-        key = name.upper()
-        if key in self._store:
-            return self._store[key]
-        raise AttributeError(f"Configuration option '{name}' is not defined")
+        env_val = os.getenv(f"{self._prefix}{name.upper()}")
+        if env_val:
+            return self._cast(env_val)
+        return self._conf.get(name)
 
-    def export_active(self, mask_secrets: bool = True) -> Dict[str, Any]:
-        result = dict(self._store)
-        if mask_secrets and result.get("PRIVATE_KEY"):
-            raw = str(result["PRIVATE_KEY"])
-            result["PRIVATE_KEY"] = f"{raw[:4]}...{raw[-4:]}" if len(raw) > 8 else "***"
-        return result
+    def _cast(self, val: str) -> Any:
+        try:
+            return json.loads(val)
+        except (json.JSONDecodeError, TypeError):
+            return val
+
+def get_config(defaults: Dict[str, Any]) -> ConfigLoader:
+    loader = ConfigLoader(defaults)
+    loader.load_from_file('config.json')
+    return loader
