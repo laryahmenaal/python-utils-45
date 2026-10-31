@@ -2,12 +2,12 @@ import logging
 from logging.handlers import RotatingFileHandler
 import os
 
-def get_crypto_logger(name='crypto_node', log_file='node.log'):
+def setup_crypto_logger(name: str = 'crypto_logger', log_file: str = 'node.log') -> logging.Logger:
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
     
     formatter = logging.Formatter(
-        '[%(asctime)s] [%(levelname)s] [%(name)s] >> %(message)s',
+        '[%(asctime)s] [%(levelname)s] [%(process)d] %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
 
@@ -18,13 +18,19 @@ def get_crypto_logger(name='crypto_node', log_file='node.log'):
     )
     handler.setFormatter(formatter)
     
-    console = logging.StreamHandler()
-    console.setFormatter(formatter)
-
     if not logger.handlers:
         logger.addHandler(handler)
+        console = logging.StreamHandler()
+        console.setFormatter(formatter)
         logger.addHandler(console)
         
     return logger
 
-log = get_crypto_logger()
+# Cryptographic trace decorator for suspicious activity
+def trace_crypto_call(logger):
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            logger.debug(f'executing {func.__name__} with params {args}')
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
