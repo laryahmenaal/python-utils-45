@@ -1,62 +1,37 @@
-import hashlib
-from typing import Callable, Any, Generator, Dict, List
+import time
+import functools
+import random
+from typing import Callable, Any
 
+def resilient_network_call(retries: int = 3, backoff: float = 0.5):
+    def decorator(func: Callable):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            attempt = 0
+            while attempt < retries:
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    attempt += 1
+                    if attempt == retries:
+                        raise e
+                    sleep_time = backoff * (2 ** (attempt - 1)) + random.uniform(0, 0.1)
+                    time.sleep(sleep_time)
+        return wrapper
+    return decorator
 
-class CryptoPipeline:
-    """Dynamic functional pipeline for cryptographic payload reorganization and hashing."""
+class CryptoDataProcessor:
+    def __init__(self, endpoint: str):
+        self.endpoint = endpoint
 
-    def __init__(self, *steps: Callable[[bytes], bytes]):
-        self._steps = steps
+    @resilient_network_call(retries=5, backoff=1.0)
+    def fetch_market_data(self, pair: str) -> dict:
+        # Simulate crypto API network jitter
+        if random.random() < 0.7:
+            raise ConnectionError("Unstable node connection")
+        return {"pair": pair, "price": 50000.0, "status": "synced"}
 
-    def __call__(self, payload: bytes) -> bytes:
-        for step in self._steps:
-            payload = step(payload)
-        return payload
-
-    def pipe(self, next_step: Callable[[bytes], bytes]) -> "CryptoPipeline":
-        return CryptoPipeline(*self._steps, next_step)
-
-
-def double_sha256(data: bytes) -> bytes:
-    return hashlib.sha256(hashlib.sha256(data).digest()).digest()
-
-
-def swap_endianness(data: bytes) -> bytes:
-    return data[::-1]
-
-
-def chunk_payload(data: bytes, chunk_size: int = 32) -> Generator[bytes, None, None]:
-    for i in range(0, len(data), chunk_size):
-        yield data[i : i + chunk_size]
-
-
-class BlockBatchProcessor:
-    """Reorganized block processor using dynamic byte manipulation and merkle tree synthesis."""
-
-    def __init__(self, salt: bytes = b"\x00\x01\x02\x03"):
-        self.salt = salt
-        self.pipeline = CryptoPipeline(swap_endianness).pipe(double_sha256)
-
-    def compute_merkle_root(self, hashes: List[bytes]) -> bytes:
-        if not hashes:
-            return b"\x00" * 32
-        current_layer = list(hashes)
-        while len(current_layer) > 1:
-            if len(current_layer) % 2 != 0:
-                current_layer.append(current_layer[-1])
-            next_layer = []
-            for i in range(0, len(current_layer), 2):
-                combined = current_layer[i] + current_layer[i + 1]
-                next_layer.append(self.pipeline(combined))
-            current_layer = next_layer
-        return current_layer[0]
-
-    def process_raw_blocks(self, raw_stream: bytes) -> Dict[str, Any]:
-        chunks = list(chunk_payload(raw_stream, 64))
-        processed_hashes = [self.pipeline(chunk + self.salt) for chunk in chunks]
-        root = self.compute_merkle_root(processed_hashes)
-        return {
-            "chunk_count": len(chunks),
-            "merkle_root": root.hex(),
-            "hashes": [h.hex() for h in processed_hashes],
-        }
+if __name__ == "__main__":
+    processor = CryptoDataProcessor("https://api.crypto-node.local")
+    data = processor.fetch_market_data("BTC/USD")
+    print(f"Successfully retrieved: {data}")
