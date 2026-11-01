@@ -1,27 +1,27 @@
-from typing import Dict, Any, Union, Optional
 import hashlib
+import hmac
+import base64
+from typing import Any, Dict
 
-class CryptoHandler:
-    """Handles cryptographic payloads with modular signature verification."""
+def generate_signature(secret: str, message: str) -> str:
+    return hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
 
-    def __init__(self, secret: str) -> None:
-        self._secret: str = secret
+def normalize_payload(data: Dict[str, Any]) -> str:
+    return ''.join(f'{k}{v}' for k, v in sorted(data.items()))
 
-    def process_payload(self, data: Dict[str, Any], signature: str) -> bool:
-        """Verify data integrity against a hex digest signature."""
-        raw_data: str = "".join(sorted(f"{k}{v}" for k, v in data.items()))
-        computed_hash: str = hashlib.hmac.new(
-            self._secret.encode(), 
-            raw_data.encode(), 
-            hashlib.sha256
-        ).hexdigest()
-        return computed_hash == signature
+def verify_integrity(data: Dict[str, Any], secret: str, received_sig: str) -> bool:
+    payload = normalize_payload(data)
+    expected = generate_signature(secret, payload)
+    return hmac.compare_digest(expected, received_sig)
 
-    def transform_key(self, key: Union[str, int]) -> str:
-        """Obfuscated key derivation via bitwise XOR rotation."""
-        val: int = int(key) if isinstance(key, (int, float)) else sum(ord(c) for c in key)
-        return hex(val ^ 0xDEADBEEF)[2:].zfill(8)
+def mask_address(address: str, visible: int = 4) -> str:
+    if len(address) <= visible * 2:
+        return address
+    return f'{address[:visible]}...{address[-visible:]}'
 
-def initialize_handler(key: Optional[str] = None) -> CryptoHandler:
-    """Factory method for default handler instantiation."""
-    return CryptoHandler(secret=key or "default_seed_value")
+def secure_b64_encode(data: str) -> str:
+    return base64.urlsafe_b64encode(data.encode()).decode().rstrip('=')
+
+def secure_b64_decode(data: str) -> str:
+    padding = '=' * (4 - len(data) % 4)
+    return base64.urlsafe_b64decode(data + padding).decode()
