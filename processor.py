@@ -1,65 +1,62 @@
 import hashlib
-from typing import Callable, Dict, List, Tuple, Union
+from typing import Callable, Any, Generator, Dict, List
 
 
 class CryptoPipeline:
-    """Pipe-based data transformer using bitwise OR overload."""
+    """Dynamic functional pipeline for cryptographic payload reorganization and hashing."""
 
     def __init__(self, *steps: Callable[[bytes], bytes]):
         self._steps = steps
 
-    def __ror__(self, data: Union[bytes, str]) -> bytes:
-        payload = data.encode("utf-8") if isinstance(data, str) else data
+    def __call__(self, payload: bytes) -> bytes:
         for step in self._steps:
             payload = step(payload)
         return payload
 
-
-def sha256_step(data: bytes) -> bytes:
-    return hashlib.sha256(data).digest()
-
-
-def sha512_step(data: bytes) -> bytes:
-    return hashlib.sha512(data).digest()
+    def pipe(self, next_step: Callable[[bytes], bytes]) -> "CryptoPipeline":
+        return CryptoPipeline(*self._steps, next_step)
 
 
-def keccak_sim_step(data: bytes) -> bytes:
-    """Creative custom byte permutor for pre-hashing block data."""
-    return bytes(b ^ 0xAA for b in data)
+def double_sha256(data: bytes) -> bytes:
+    return hashlib.sha256(hashlib.sha256(data).digest()).digest()
 
 
-class StreamProcessor:
-    """Stream processor for blockchain payload verification and hashing."""
+def swap_endianness(data: bytes) -> bytes:
+    return data[::-1]
 
-    _PIPELINES: Dict[str, CryptoPipeline] = {
-        "sha256d": CryptoPipeline(sha256_step, sha256_step),
-        "obscure": CryptoPipeline(keccak_sim_step, sha512_step, sha256_step),
-    }
 
-    def __init__(self, items: List[Tuple[str, str]]):
-        self._items = items
-        self._results: Dict[str, str] = {}
+def chunk_payload(data: bytes, chunk_size: int = 32) -> Generator[bytes, None, None]:
+    for i in range(0, len(data), chunk_size):
+        yield data[i : i + chunk_size]
 
-    def execute(self, mode: str = "sha256d") -> Dict[str, str]:
-        pipeline = self._PIPELINES.get(mode)
-        if not pipeline:
-            raise ValueError(f"Unsupported pipeline mode: {mode}")
 
-        for tx_id, payload in self._items:
-            processed_bytes = payload | pipeline
-            self._results[tx_id] = processed_bytes.hex()
+class BlockBatchProcessor:
+    """Reorganized block processor using dynamic byte manipulation and merkle tree synthesis."""
 
-        return self._results
+    def __init__(self, salt: bytes = b"\x00\x01\x02\x03"):
+        self.salt = salt
+        self.pipeline = CryptoPipeline(swap_endianness).pipe(double_sha256)
 
-    def compute_merkle_root(self) -> str:
-        if not self._results:
-            self.execute()
-        hashes = [bytes.fromhex(h) for h in self._results.values()]
-        while len(hashes) > 1:
-            if len(hashes) % 2 != 0:
-                hashes.append(hashes[-1])
-            hashes = [
-                hashlib.sha256(hashes[i] + hashes[i + 1]).digest()
-                for i in range(0, len(hashes), 2)
-            ]
-        return hashes[0].hex() if hashes else ""
+    def compute_merkle_root(self, hashes: List[bytes]) -> bytes:
+        if not hashes:
+            return b"\x00" * 32
+        current_layer = list(hashes)
+        while len(current_layer) > 1:
+            if len(current_layer) % 2 != 0:
+                current_layer.append(current_layer[-1])
+            next_layer = []
+            for i in range(0, len(current_layer), 2):
+                combined = current_layer[i] + current_layer[i + 1]
+                next_layer.append(self.pipeline(combined))
+            current_layer = next_layer
+        return current_layer[0]
+
+    def process_raw_blocks(self, raw_stream: bytes) -> Dict[str, Any]:
+        chunks = list(chunk_payload(raw_stream, 64))
+        processed_hashes = [self.pipeline(chunk + self.salt) for chunk in chunks]
+        root = self.compute_merkle_root(processed_hashes)
+        return {
+            "chunk_count": len(chunks),
+            "merkle_root": root.hex(),
+            "hashes": [h.hex() for h in processed_hashes],
+        }
