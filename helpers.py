@@ -1,29 +1,29 @@
-import time
 import functools
-import random
+import hashlib
 from typing import Callable, Any
 
-def retry_crypto_op(attempts: int = 3, backoff: float = 0.5) -> Callable:
+def fast_hash_lru(maxsize: int = 128) -> Callable:
+    """cryptographic signature memoization using transient hashing"""
     def decorator(func: Callable) -> Callable:
+        cache = {}
         @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            last_ex = None
-            for i in range(attempts):
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    last_ex = e
-                    jitter = random.uniform(0, 0.1 * backoff)
-                    time.sleep((backoff * (2 ** i)) + jitter)
-            raise last_ex
+        def wrapper(*args, **kwargs) -> Any:
+            key = hashlib.blake2b(str((args, kwargs)).encode(), digest_size=16).digest()
+            if key in cache:
+                return cache[key]
+            result = func(*args, **kwargs)
+            if len(cache) >= maxsize:
+                cache.pop(next(iter(cache)))
+            cache[key] = result
+            return result
         return wrapper
     return decorator
 
-def secure_request(url: str, payload: dict) -> dict:
-    @retry_crypto_op(attempts=4, backoff=1.0)
-    def _execute():
-        # Simulated network I/O for crypto node communication
-        if random.random() < 0.7:
-            raise ConnectionError("Node synchronization timeout")
-        return {"status": "ok", "tx_hash": "0xdeadbeef"}
-    return _execute()
+def batch_process_generator(data: list, chunk_size: int = 1024):
+    """memory-efficient batch iteration for high-frequency crypto payloads"""
+    for i in range(0, len(data), chunk_size):
+        yield data[i:i + chunk_size]
+
+def inline_bit_xor(a: bytes, b: bytes) -> bytes:
+    """performance-oriented byte manipulation for stream cipher primitives"""
+    return bytes(x ^ y for x, y in zip(a, b))
