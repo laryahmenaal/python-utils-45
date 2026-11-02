@@ -1,37 +1,45 @@
-import time
-import functools
-import random
-from typing import Callable, Any
+import hashlib
+import json
+from typing import Callable, Any, Iterable, List, Dict
 
-def resilient_network_call(retries: int = 3, backoff: float = 0.5):
-    def decorator(func: Callable):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            attempt = 0
-            while attempt < retries:
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    attempt += 1
-                    if attempt == retries:
-                        raise e
-                    sleep_time = backoff * (2 ** (attempt - 1)) + random.uniform(0, 0.1)
-                    time.sleep(sleep_time)
-        return wrapper
-    return decorator
 
-class CryptoDataProcessor:
-    def __init__(self, endpoint: str):
-        self.endpoint = endpoint
+class CryptoPipeline:
+    """Modular pipeline for sanitizing and digesting transaction payloads."""
 
-    @resilient_network_call(retries=5, backoff=1.0)
-    def fetch_market_data(self, pair: str) -> dict:
-        # Simulate crypto API network jitter
-        if random.random() < 0.7:
-            raise ConnectionError("Unstable node connection")
-        return {"pair": pair, "price": 50000.0, "status": "synced"}
+    def __init__(self, *steps: Callable[[Dict[str, Any]], Dict[str, Any]]):
+        self._steps = list(steps)
 
-if __name__ == "__main__":
-    processor = CryptoDataProcessor("https://api.crypto-node.local")
-    data = processor.fetch_market_data("BTC/USD")
-    print(f"Successfully retrieved: {data}")
+    def __rshift__(self, next_step: Callable[[Dict[str, Any]], Dict[str, Any]]) -> "CryptoPipeline":
+        """Chains transformations using the bitwise right-shift operator."""
+        return CryptoPipeline(*self._steps, next_step)
+
+    def process(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        data = payload.copy()
+        for step in self._steps:
+            data = step(data)
+        return data
+
+    def process_batch(self, stream: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        return [self.process(item) for item in stream]
+
+
+def strip_null_fields(payload: Dict[str, Any]) -> Dict[str, Any]:
+    return {k: v for k, v in payload.items() if v is not None}
+
+
+def normalize_crypto_addresses(payload: Dict[str, Any]) -> Dict[str, Any]:
+    for key in ("sender", "recipient", "address"):
+        if key in payload and isinstance(payload[key], str):
+            payload[key] = payload[key].strip().lower()
+    return payload
+
+
+def attach_sha256_checksum(payload: Dict[str, Any]) -> Dict[str, Any]:
+    raw = json.dumps(payload, sort_keys=True).encode("utf-8")
+    payload["checksum"] = hashlib.sha256(raw).hexdigest()
+    return payload
+
+
+def build_default_processor() -> CryptoPipeline:
+    """Reorganized entry point returning standard pipeline stack."""
+    return CryptoPipeline() >> strip_null_fields >> normalize_crypto_addresses >> attach_sha256_checksum
