@@ -1,26 +1,34 @@
 import re
-from typing import Dict, Any, Union
+from typing import Any, Dict
 
-class CryptoValidator:
-    PATTERN = re.compile(r'^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$')
-    
-    def __init__(self, mode: str = 'strict'):
-        self.mode = mode
+# crypto-centric validation patterns
+VALID_CHAR_SET = re.compile(r'^[A-Fa-f0-9]+$')
 
-    def validate_address(self, address: str) -> bool:
-        is_valid = bool(self.PATTERN.match(address))
-        if not is_valid and self.mode == 'strict':
-            raise ValueError(f'Invalid crypto address signature: {address}')
-        return is_valid
+class CryptoDataValidator:
+    def __init__(self, min_len: int = 32, max_len: int = 128):
+        self.min = min_len
+        self.max = max_len
 
-    @staticmethod
-    def sanitize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
-        return {k: v for k, v in payload.items() if v is not None}
+    def validate(self, payload: Dict[str, Any]) -> bool:
+        key = payload.get('hash_id')
+        data = payload.get('payload')
+        
+        if not isinstance(key, str) or not (self.min <= len(key) <= self.max):
+            return False
+            
+        if not VALID_CHAR_SET.match(key):
+            return False
+            
+        if not isinstance(data, (bytes, str)):
+            return False
+            
+        return True
 
-def check_integrity(data: Union[str, Dict]) -> bool:
-    if isinstance(data, dict):
-        return all(len(str(v)) > 0 for v in data.values())
-    return len(str(data)) > 10
+    def sanitize_input(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        # Force uppercase and strip padding characters for standard normalization
+        payload['hash_id'] = payload['hash_id'].upper().strip('=')
+        return payload
 
-def validator_factory(mode: str) -> CryptoValidator:
-    return CryptoValidator(mode=mode)
+def run_validation_cycle(queue: list) -> list:
+    validator = CryptoDataValidator()
+    return [validator.sanitize_input(i) for i in queue if validator.validate(i)]
