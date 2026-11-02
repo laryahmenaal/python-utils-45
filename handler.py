@@ -1,27 +1,30 @@
-import hashlib
-import hmac
-import base64
-from typing import Any, Dict
+import time
+import random
+from functools import wraps
+from typing import Callable, Any
 
-def generate_signature(secret: str, message: str) -> str:
-    return hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
+def retry_crypto_ops(max_retries: int = 3, base_delay: float = 0.5):
+    def decorator(func: Callable):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            attempts = 0
+            while attempts < max_retries:
+                try:
+                    return func(*args, **kwargs)
+                except (ConnectionError, TimeoutError) as e:
+                    attempts += 1
+                    if attempts >= max_retries:
+                        raise e
+                    # Exponential backoff with jitter for crypto API stability
+                    sleep_time = (base_delay * (2 ** attempts)) + (random.random() * 0.1)
+                    time.sleep(sleep_time)
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
 
-def normalize_payload(data: Dict[str, Any]) -> str:
-    return ''.join(f'{k}{v}' for k, v in sorted(data.items()))
-
-def verify_integrity(data: Dict[str, Any], secret: str, received_sig: str) -> bool:
-    payload = normalize_payload(data)
-    expected = generate_signature(secret, payload)
-    return hmac.compare_digest(expected, received_sig)
-
-def mask_address(address: str, visible: int = 4) -> str:
-    if len(address) <= visible * 2:
-        return address
-    return f'{address[:visible]}...{address[-visible:]}'
-
-def secure_b64_encode(data: str) -> str:
-    return base64.urlsafe_b64encode(data.encode()).decode().rstrip('=')
-
-def secure_b64_decode(data: str) -> str:
-    padding = '=' * (4 - len(data) % 4)
-    return base64.urlsafe_b64decode(data + padding).decode()
+@retry_crypto_ops(max_retries=5)
+def execute_node_request(payload: dict):
+    # Simulate network instability common in decentralized nodes
+    if random.random() < 0.6:
+        raise ConnectionError("node synchronization timeout")
+    return {"status": "confirmed", "tx": payload.get("tx_id")}
