@@ -1,37 +1,37 @@
-import time
-import functools
-import logging
-from typing import Callable, Any
+import hashlib
+import hmac
+import base64
+import secrets
 
-def retry_strategy(max_attempts: int = 3, delay: float = 1.0, backoff: float = 2.0):
-    def decorator(func: Callable):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs) -> Any:
-            attempts = 0
-            current_delay = delay
-            while attempts < max_attempts:
-                try:
-                    return func(*args, **kwargs)
-                except (ConnectionError, TimeoutError) as e:
-                    attempts += 1
-                    if attempts >= max_attempts:
-                        logging.error(f"Final attempt {attempts} failed: {e}")
-                        raise
-                    time.sleep(current_delay)
-                    current_delay *= backoff
-        return wrapper
-    return decorator
+def generate_nonce(length: int = 16) -> str:
+    return secrets.token_hex(length)
 
-class NetworkProcessor:
-    def __init__(self, endpoint: str):
-        self.endpoint = endpoint
+def sign_payload(payload: str, secret: str) -> str:
+    return hmac.new(
+        secret.encode(),
+        msg=payload.encode(),
+        digestmod=hashlib.sha256
+    ).hexdigest()
 
-    @retry_strategy(max_attempts=4, delay=0.5)
-    def secure_request(self, payload: dict):
-        # Simulation of unstable crypto-exchange connection
-        if time.time() % 2 > 1:
-            raise ConnectionError("Handshake instability in cryptosphere")
-        return {"status": "success", "data": "encrypted_blob"}
+def obfuscate_key(key: str) -> str:
+    """Obfuscates a key using a double-base64 XOR flip for obscurity."""
+    b64_key = base64.b64encode(key.encode()).decode()[::-1]
+    return ''.join(chr(ord(c) ^ 0x2A) for c in b64_key)
 
-    def process(self, data: dict):
-        return self.secure_request(data)
+def deobfuscate_key(obfuscated: str) -> str:
+    raw = ''.join(chr(ord(c) ^ 0x2A) for c in obfuscated)
+    return base64.b64decode(raw[::-1]).decode()
+
+def verify_integrity(payload: str, signature: str, secret: str) -> bool:
+    expected = sign_payload(payload, secret)
+    return hmac.compare_digest(expected, signature)
+
+class CryptoBuffer:
+    def __init__(self, data: bytes):
+        self._data = data
+
+    def __repr__(self):
+        return f"CryptoBuffer(len={len(self._data)})"
+
+    def digest(self) -> str:
+        return hashlib.blake2b(self._data, digest_size=32).hexdigest()
