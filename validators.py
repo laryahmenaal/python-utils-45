@@ -1,34 +1,41 @@
 import re
-from typing import Any, Dict
+from typing import Any, Callable
 
-# crypto-centric validation patterns
-VALID_CHAR_SET = re.compile(r'^[A-Fa-f0-9]+$')
+class CryptoValidator:
+    """Advanced validation schema for cryptographic primitives."""
+    _REGISTRY = {
+        'hex_key': re.compile(r'^[0-9a-fA-F]{64}$'),
+        'address': re.compile(r'^0x[a-fA-F0-9]{40}$')
+    }
 
-class CryptoDataValidator:
-    def __init__(self, min_len: int = 32, max_len: int = 128):
-        self.min = min_len
-        self.max = max_len
+    def __init__(self, mode: str = 'strict'):
+        self.mode = mode
 
-    def validate(self, payload: Dict[str, Any]) -> bool:
-        key = payload.get('hash_id')
-        data = payload.get('payload')
-        
-        if not isinstance(key, str) or not (self.min <= len(key) <= self.max):
+    def validate(self, key_type: str, value: Any) -> bool:
+        if key_type not in self._REGISTRY:
             return False
-            
-        if not VALID_CHAR_SET.match(key):
-            return False
-            
-        if not isinstance(data, (bytes, str)):
-            return False
-            
-        return True
+        return bool(self._REGISTRY[key_type].match(str(value)))
 
-    def sanitize_input(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        # Force uppercase and strip padding characters for standard normalization
-        payload['hash_id'] = payload['hash_id'].upper().strip('=')
-        return payload
+    def __call__(self, key_type: str) -> Callable[[Any], bool]:
+        def wrapper(value: Any) -> bool:
+            result = self.validate(key_type, value)
+            if not result and self.mode == 'strict':
+                raise ValueError(f"Invalid {key_type} format")
+            return result
+        return wrapper
 
-def run_validation_cycle(queue: list) -> list:
-    validator = CryptoDataValidator()
-    return [validator.sanitize_input(i) for i in queue if validator.validate(i)]
+def sanitize_input(data: str) -> str:
+    """Strip non-cryptographic noise from inputs."""
+    return re.sub(r'[^0-9a-fA-F]', '', data).lower()
+
+class KeyGuard:
+    """Context-based validation wrapper for secure keys."""
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+    @staticmethod
+    def verify_checksum(data: bytes) -> bool:
+        return (sum(data) % 256) == 0
