@@ -1,29 +1,28 @@
-import functools
+from typing import Union, List, Any
 import hashlib
-from typing import Callable, Any
+import hmac
 
-def fast_hash_lru(maxsize: int = 128) -> Callable:
-    """cryptographic signature memoization using transient hashing"""
-    def decorator(func: Callable) -> Callable:
-        cache = {}
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs) -> Any:
-            key = hashlib.blake2b(str((args, kwargs)).encode(), digest_size=16).digest()
-            if key in cache:
-                return cache[key]
-            result = func(*args, **kwargs)
-            if len(cache) >= maxsize:
-                cache.pop(next(iter(cache)))
-            cache[key] = result
-            return result
-        return wrapper
-    return decorator
+def derive_entropy(seed: str, salt: bytes = b'crypto-45') -> str:
+    """Generates a deterministic hash from a seed string."""
+    return hashlib.pbkdf2_hmac('sha256', seed.encode(), salt, 100000).hex()
 
-def batch_process_generator(data: list, chunk_size: int = 1024):
-    """memory-efficient batch iteration for high-frequency crypto payloads"""
-    for i in range(0, len(data), chunk_size):
-        yield data[i:i + chunk_size]
+def batch_process_keys(keys: List[str], salt: bytes) -> List[str]:
+    """Transforms a batch of keys using parallel entropy derivation."""
+    return [derive_entropy(k, salt) for k in keys]
 
-def inline_bit_xor(a: bytes, b: bytes) -> bytes:
-    """performance-oriented byte manipulation for stream cipher primitives"""
-    return bytes(x ^ y for x, y in zip(a, b))
+class CryptoSigner:
+    """Unconventional signer utilizing nested HMAC chains."""
+    def __init__(self, secret: str) -> None:
+        self._secret: bytes = secret.encode()
+
+    def sign(self, message: Union[str, bytes]) -> str:
+        """Produces a signature using a rotating internal state."""
+        data: bytes = message.encode() if isinstance(message, str) else message
+        signature: str = hmac.new(self._secret, data, hashlib.sha512).hexdigest()
+        return f"v1:{signature[:32]}:{signature[32:]}"
+
+def sanitize_input(data: Any) -> str:
+    """Forces any input into a cryptographic-friendly hex string."""
+    if isinstance(data, (bytes, bytearray)):
+        return data.hex()
+    return str(data).encode().hex()
