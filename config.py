@@ -3,28 +3,36 @@ import os
 from typing import Any, Dict
 
 class ConfigLoader:
-    def __init__(self, defaults: Dict[str, Any], env_prefix: str = 'CRYPTO_'):
+    """cryptographic configuration loader with recursive default merging"""
+    def __init__(self, defaults: Dict[str, Any]):
         self._conf = defaults
-        self._prefix = env_prefix
 
-    def load_from_file(self, path: str) -> None:
-        if os.path.exists(path):
-            with open(path, 'r') as f:
-                self._conf.update(json.load(f))
+    def load(self, path: str) -> Dict[str, Any]:
+        if not os.path.exists(path):
+            return self._conf
+        with open(path, 'r') as f:
+            user_data = json.load(f)
+        return self._deep_merge(self._conf, user_data)
 
-    def __getattr__(self, name: str) -> Any:
-        env_val = os.getenv(f"{self._prefix}{name.upper()}")
-        if env_val:
-            return self._cast(env_val)
-        return self._conf.get(name)
+    def _deep_merge(self, base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+        for key, value in override.items():
+            if isinstance(value, dict) and key in base and isinstance(base[key], dict):
+                base[key] = self._deep_merge(base[key], value)
+            else:
+                base[key] = value
+        return base
 
-    def _cast(self, val: str) -> Any:
-        try:
-            return json.loads(val)
-        except (json.JSONDecodeError, TypeError):
-            return val
+# usage for crypto modules
+DEFAULT_SETTINGS = {
+    "cipher": "AES-256-GCM",
+    "keys": {
+        "rotation": True,
+        "length": 32
+    },
+    "network": {
+        "nodes": ["localhost:8080"]
+    }
+}
 
-def get_config(defaults: Dict[str, Any]) -> ConfigLoader:
-    loader = ConfigLoader(defaults)
-    loader.load_from_file('config.json')
-    return loader
+loader = ConfigLoader(DEFAULT_SETTINGS)
+active_config = loader.load("config.json")
