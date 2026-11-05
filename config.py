@@ -1,38 +1,41 @@
-import json
 import os
+import json
 from typing import Any, Dict
 
 class ConfigLoader:
-    """cryptographic configuration loader with recursive default merging"""
-    def __init__(self, defaults: Dict[str, Any]):
-        self._conf = defaults
-
-    def load(self, path: str) -> Dict[str, Any]:
-        if not os.path.exists(path):
-            return self._conf
-        with open(path, 'r') as f:
-            user_data = json.load(f)
-        return self._deep_merge(self._conf, user_data)
-
-    def _deep_merge(self, base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
-        for key, value in override.items():
-            if isinstance(value, dict) and key in base and isinstance(base[key], dict):
-                base[key] = self._deep_merge(base[key], value)
-            else:
-                base[key] = value
-        return base
-
-# usage for crypto modules
-DEFAULT_SETTINGS = {
-    "cipher": "AES-256-GCM",
-    "keys": {
-        "rotation": True,
-        "length": 32
-    },
-    "network": {
-        "nodes": ["localhost:8080"]
+    """cryptographic configuration provider using environment overrides"""
+    DEFAULTS = {
+        "kdf_iterations": 100000,
+        "cipher": "AES-256-GCM",
+        "key_rotation_days": 30
     }
-}
 
-loader = ConfigLoader(DEFAULT_SETTINGS)
-active_config = loader.load("config.json")
+    def __init__(self, path: str = "config.json"):
+        self.path = path
+        self._data = self.DEFAULTS.copy()
+        self._load_and_merge()
+
+    def _load_and_merge(self) -> None:
+        try:
+            if os.path.exists(self.path):
+                with open(self.path, "r") as f:
+                    file_data = json.load(f)
+                    self._data.update(file_data)
+        except (json.JSONDecodeError, IOError):
+            pass
+        
+        for key in self.DEFAULTS:
+            env_val = os.getenv(f"CRYPTO_{key.upper()}")
+            if env_val:
+                try:
+                    self._data[key] = type(self.DEFAULTS[key])(env_val)
+                except ValueError:
+                    pass
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self._data.get(key, default)
+
+    def __getitem__(self, key: str) -> Any:
+        return self._data[key]
+
+config = ConfigLoader()
