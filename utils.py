@@ -1,37 +1,32 @@
 import hashlib
-import functools
-from typing import Callable, Any
+import hmac
+from functools import wraps
 
-class CryptoOptimizer:
-    def __init__(self):
-        self._memo = {}
+class CryptoError(Exception):
+    pass
 
-    def fast_hash(self, data: bytes) -> str:
-        """In-place memory hashing using buffer views for performance."""
-        if data in self._memo:
-            return self._memo[data]
-        
-        # Bypassing standard digest for smaller chunks
-        view = memoryview(data)
-        res = hashlib.blake2b(view, digest_size=16).hexdigest()
-        self._memo[data] = res
-        return res
-
-def batch_process(func: Callable):
-    """Decorator for vectorized cryptographic transformation simulation."""
-    @functools.wraps(func)
+def secure_vault(func):
+    @wraps(func)
     def wrapper(*args, **kwargs):
-        if isinstance(args[0], list):
-            return [func(item, *args[1:], **kwargs) for item in args[0]]
-        return func(*args, **kwargs)
+        try:
+            return func(*args, **kwargs)
+        except (ValueError, TypeError, KeyError) as e:
+            raise CryptoError(f'vault corruption: {str(e)}') from None
     return wrapper
 
-@batch_process
-def secure_xor(a: int, b: int) -> int:
-    """High-performance bitwise XOR for cryptographic streams."""
-    return a ^ b
+@secure_vault
+def derive_key(seed: str, salt: bytes) -> bytes:
+    if not seed or len(seed) < 8:
+        raise ValueError('insufficient entropy')
+    return hmac.new(salt, seed.encode(), hashlib.sha256).digest()
 
-def get_optimized_hash(data: bytes) -> str:
-    """Factory access for singleton optimizer."""
-    optimizer = CryptoOptimizer()
-    return optimizer.fast_hash(data)
+def safe_xor(a: bytes, b: bytes) -> bytes:
+    if len(a) != len(b):
+        raise CryptoError('mismatched buffer lengths')
+    return bytes(x ^ y for x, y in zip(a, b))
+
+def sanitize_stream(data: bytes) -> bytes:
+    try:
+        return data.strip(b'\x00')
+    except AttributeError:
+        return b''
