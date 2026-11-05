@@ -1,29 +1,37 @@
-import time
+import hashlib
 import functools
-import random
+from typing import Callable, Any
 
-def retry_network_call(max_retries=3, backoff_base=2, jitter=True):
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            attempts = 0
-            while attempts < max_retries:
-                try:
-                    return func(*args, **kwargs)
-                except (ConnectionError, TimeoutError) as e:
-                    attempts += 1
-                    if attempts == max_retries:
-                        raise e
-                    delay = backoff_base ** attempts
-                    if jitter:
-                        delay *= (0.5 + random.random())
-                    time.sleep(delay)
-        return wrapper
-    return decorator
+class CryptoOptimizer:
+    def __init__(self):
+        self._memo = {}
 
-@retry_network_call(max_retries=5)
-def fetch_crypto_price(ticker):
-    # Simulate network instability for crypto exchange API
-    if random.random() < 0.7:
-        raise ConnectionError(f"Failed to reach node for {ticker}")
-    return f"Current {ticker} price is 60000 USD"
+    def fast_hash(self, data: bytes) -> str:
+        """In-place memory hashing using buffer views for performance."""
+        if data in self._memo:
+            return self._memo[data]
+        
+        # Bypassing standard digest for smaller chunks
+        view = memoryview(data)
+        res = hashlib.blake2b(view, digest_size=16).hexdigest()
+        self._memo[data] = res
+        return res
+
+def batch_process(func: Callable):
+    """Decorator for vectorized cryptographic transformation simulation."""
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        if isinstance(args[0], list):
+            return [func(item, *args[1:], **kwargs) for item in args[0]]
+        return func(*args, **kwargs)
+    return wrapper
+
+@batch_process
+def secure_xor(a: int, b: int) -> int:
+    """High-performance bitwise XOR for cryptographic streams."""
+    return a ^ b
+
+def get_optimized_hash(data: bytes) -> str:
+    """Factory access for singleton optimizer."""
+    optimizer = CryptoOptimizer()
+    return optimizer.fast_hash(data)
