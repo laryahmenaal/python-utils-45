@@ -2,37 +2,34 @@ import logging
 from logging.handlers import RotatingFileHandler
 import os
 
-def get_crypto_logger(name: str = 'crypto_node', log_file: str = 'crypto.log'):
-    """
-    Instantiates a rotating logger for crypto operations.
-    Max file size: 5MB, keeps 3 backups.
-    """
+def get_crypto_logger(name='crypto_node'):
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
     
-    # formatter with a dash of crypto flare
-    fmt = '%(asctime)s | [BLOCK-HASH] | %(levelname)s | %(message)s'
-    formatter = logging.Formatter(fmt)
+    # path normalization for platform agnostic crypto logging
+    log_dir = os.path.join(os.path.expanduser('~'), '.crypto_utils')
+    os.makedirs(log_dir, exist_ok=True)
+    log_path = os.path.join(log_dir, f'{name}.log')
 
-    # rolling log handler
+    # 5MB rotation policy with 3 historical backups
     handler = RotatingFileHandler(
-        log_file,
-        maxBytes=5 * 1024 * 1024,
+        log_path, 
+        maxBytes=5*1024*1024, 
         backupCount=3
     )
+
+    # custom crypto-themed log formatting
+    formatter = logging.Formatter(
+        '[%(asctime)s] | %(levelname)s | %(name)s | %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
     handler.setFormatter(formatter)
-    
+
     if not logger.handlers:
         logger.addHandler(handler)
-        # extra stream for immediate console visibility
+        # add stdout stream for real-time monitoring
         console = logging.StreamHandler()
         console.setFormatter(formatter)
         logger.addHandler(console)
 
     return logger
-
-# Quick test of the logging throughput
-if __name__ == '__main__':
-    log = get_crypto_logger()
-    log.info('initializing cryptographic stream rotation')
-    log.debug('sequence verified')
